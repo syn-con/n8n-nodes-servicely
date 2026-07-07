@@ -1,0 +1,48 @@
+{
+  "name": "n8n-nodes-servicely",
+  "version": "0.1.0",
+  "description": "n8n community node for the Servicely ITSM/ESM JSON REST API (v1)",
+  "keywords": [
+    "n8n-community-node-package",
+    "servicely",
+    "itsm",
+    "esm"
+  ],
+  "license": "MIT",
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/ServicelyApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/Servicely.node.js"
+    ]
+  },
+  "scripts": {
+    "build": "tsc && node scripts/copy-assets.mjs",
+    "build:watch": "tsc --watch",
+    "dev": "node scripts/dev.mjs",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^4.1.9",
+    "eslint": "^9.0.0",
+    "n8n-workflow": "^1.60.0",
+    "typescript": "^5.3.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^4.1.9"
+  }
+}
