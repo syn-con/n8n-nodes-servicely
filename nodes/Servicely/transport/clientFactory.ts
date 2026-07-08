@@ -3,17 +3,19 @@ import type {
   IExecuteFunctions,
   IHttpRequestMethods,
   ILoadOptionsFunctions,
+  IPollFunctions,
 } from 'n8n-workflow';
 
 import { ApiClient } from './ApiClient';
 import type { AuthConfig, AuthMethod, HttpRequestFn } from '../types';
 
 /**
- * n8n contexts that can build a Servicely client: the execution context and the
- * design-time load-options / list-search context. Both expose `getCredentials`
- * and `helpers.httpRequest`, which is all the transport layer needs.
+ * n8n contexts that can build a Servicely client: the execution context, the
+ * polling-trigger context, and the design-time load-options / list-search
+ * context. All expose `getCredentials` and `helpers.httpRequest`, which is all
+ * the transport layer needs.
  */
-export type ClientContext = IExecuteFunctions | ILoadOptionsFunctions;
+export type ClientContext = IExecuteFunctions | ILoadOptionsFunctions | IPollFunctions;
 
 /** Adapt n8n's httpRequest helper to the framework-agnostic HttpRequestFn. */
 export function makeHttpFn(ctx: ClientContext): HttpRequestFn {

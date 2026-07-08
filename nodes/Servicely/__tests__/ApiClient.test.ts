@@ -254,6 +254,44 @@ describe('ApiClient batch', () => {
   });
 });
 
+describe('ApiClient dequeue', () => {
+  it('POSTs a dequeue action to the Async Integration controller and unwraps the list', async () => {
+    const { client, http } = makeClient([
+      { status: 200, body: { data: [{ id: 'm1', payload: '{}' }, { id: 'm2', payload: 'x' }] } },
+    ]);
+    const messages = await client.dequeue({ queue: 'q1', subject: 'act', requestCount: 5 });
+    expect(messages).toHaveLength(2);
+    expect(http.calls[0].method).toBe('POST');
+    expect(http.calls[0].url).toBe('https://x.test/controller/AsyncIntegration');
+    expect(http.calls[0].body).toEqual({
+      action: 'dequeue',
+      identifier: 'n8n',
+      queue: 'q1',
+      subject: 'act',
+      request_count: 5,
+    });
+  });
+
+  it('returns an empty list when the queue has no messages', async () => {
+    const { client } = makeClient([{ status: 200, body: { data: [] } }]);
+    await expect(client.dequeue({ queue: 'q1', subject: 'act', requestCount: 5 })).resolves.toEqual([]);
+  });
+
+  it('replies to a message with the reply_to/action/status/payload body', async () => {
+    const { client, http } = makeClient([{ status: 200, body: {} }]);
+    await client.reply({ replyTo: 'm1', action: 'success', status: 'ok', payload: { ok: true } });
+    expect(http.calls[0].method).toBe('POST');
+    expect(http.calls[0].url).toBe('https://x.test/controller/AsyncIntegration');
+    expect(http.calls[0].body).toEqual({
+      reply_to: 'm1',
+      action: 'success',
+      identifier: 'n8n',
+      status: 'ok',
+      payload: { ok: true },
+    });
+  });
+});
+
 describe('ApiClient with default collaborators', () => {
   it('uses the built-in sleep/rate-limiter when none are injected', async () => {
     const http = makeHttpStub([{ status: 429 }, { status: 200, body: { data: [{ id: '1' }] } }]);

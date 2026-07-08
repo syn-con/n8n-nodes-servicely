@@ -11,6 +11,12 @@ export const API_VERSION = 'v1';
 /** API default page size for list endpoints. */
 export const DEFAULT_PAGE_SIZE = 200;
 
+/** Identifier sent as the `identifier` field on Async Integration queue calls. */
+export const QUEUE_IDENTIFIER = 'n8n';
+
+/** Default number of messages to claim per dequeue poll. */
+export const DEFAULT_DEQUEUE_COUNT = 10;
+
 /** Default request timeout in milliseconds (overridable via node options). */
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -37,6 +43,8 @@ export const ENDPOINTS = {
   batch: `/${API_VERSION}/_batch`,
   attachment: (id: string): string => `/${API_VERSION}/Attachment/${id}`,
   attachmentList: `/${API_VERSION}/Attachment`,
+  /** Async Integration queue controller (dequeue/ack). Not versioned under /v1. */
+  asyncIntegration: '/controller/AsyncIntegration',
 } as const;
 
 /** Supported query operators (verified against the GET Request docs). */

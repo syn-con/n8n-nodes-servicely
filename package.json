@@ -19,14 +19,15 @@
       "dist/credentials/ServicelyApi.credentials.js"
     ],
     "nodes": [
-      "dist/Servicely.node.js"
+      "dist/nodes/Servicely/Servicely.node.js",
+      "dist/nodes/Servicely/ServicelyTrigger.node.js"
     ]
   },
   "scripts": {
     "build": "tsc && node scripts/copy-assets.mjs",
     "build:watch": "tsc --watch",
     "dev": "node scripts/dev.mjs",
-    "lint": "eslint src/",
+    "lint": "eslint nodes credentials index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -1,4 +1,4 @@
-import type { ICredentialType, INodeProperties } from 'n8n-workflow';
+import type { Icon, ICredentialType, INodeProperties } from 'n8n-workflow';
 
 /**
  * Servicely API credential.
@@ -17,6 +17,8 @@ export class ServicelyApi implements ICredentialType {
   name = 'servicelyApi';
 
   displayName = 'Servicely API';
+
+  icon: Icon = { light: 'file:../icons/servicely.svg', dark: 'file:../icons/servicely.dark.svg' };
 
   documentationUrl = 'https://docs-servicely.atlassian.net/wiki/spaces/SD/pages/2242478081';
 

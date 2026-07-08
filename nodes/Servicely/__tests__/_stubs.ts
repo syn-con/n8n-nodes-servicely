@@ -1,4 +1,4 @@
-import type { IExecuteFunctions, ILoadOptionsFunctions } from 'n8n-workflow';
+import type { IExecuteFunctions, ILoadOptionsFunctions, IPollFunctions } from 'n8n-workflow';
 
 import type { HttpRequestFn, HttpRequestSpec, RawHttpResponse } from '../types';
 
@@ -107,4 +107,26 @@ export function makeLoadOptionsCtx(options: LoadOptionsCtxOptions = {}): ILoadOp
     helpers: { httpRequest: http },
   };
   return ctx as unknown as ILoadOptionsFunctions;
+}
+
+/**
+ * Minimal IPollFunctions stub for trigger-handler unit tests. Its
+ * `getNodeParameter(name, fallback?)` reads from the map (no itemIndex, like
+ * the real poll context); credentials/http match the load-options stub.
+ */
+export function makePollCtx(options: LoadOptionsCtxOptions = {}): IPollFunctions {
+  const params = options.params ?? {};
+  const http = options.http ?? (async () => ({ statusCode: 200, headers: {}, body: { data: [] } }));
+  const credentials = options.credentials ?? {
+    instanceUrl: 'https://x.servicely.ai',
+    authMethod: 'bearer',
+    apiToken: 'token',
+  };
+  const ctx = {
+    getNodeParameter: (name: string, fallback?: unknown) => (name in params ? params[name] : fallback),
+    getCredentials: async () => credentials,
+    getNode: () => ({ name: 'Servicely Trigger' }),
+    helpers: { httpRequest: http },
+  };
+  return ctx as unknown as IPollFunctions;
 }

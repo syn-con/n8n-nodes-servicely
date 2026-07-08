@@ -177,6 +177,54 @@ export interface AttachmentRecord extends ServicelyRecord {
 }
 
 // ---------------------------------------------------------------------------
+// Async Integration queue (POST {instanceUrl}/controller/AsyncIntegration)
+// ---------------------------------------------------------------------------
+
+/**
+ * A single message claimed from a Servicely async queue. Always carries an
+ * `id` (used as `reply_to` when acknowledging); `payload` is an opaque value
+ * that is often a JSON object/array encoded as a string.
+ */
+export interface AsyncQueueMessage {
+  id: string;
+  payload?: unknown;
+  [field: string]: unknown;
+}
+
+/** Parameters for a `dequeue` action against the Async Integration controller. */
+export interface DequeueRequest {
+  /** Queue name to claim messages from. */
+  queue: string;
+  /** Action/subject filter identifying the messages to claim. */
+  subject: string;
+  /** Maximum number of messages to claim in one call. */
+  requestCount: number;
+}
+
+/**
+ * Acknowledgement of a claimed message. `action`/`status` distinguish a
+ * successful (`success`/`ok`) from a failed (`fail`/`error`) outcome, matching
+ * the Async Integration reply contract.
+ */
+export interface QueueReplyRequest {
+  /** The claimed message id (its `reply_to`). */
+  replyTo: string;
+  action: 'success' | 'fail';
+  status: 'ok' | 'error';
+  /** Response payload returned to Servicely with the acknowledgement. */
+  payload: unknown;
+}
+
+/**
+ * Async-queue surface of the transport, kept separate from the CRUD client
+ * (ISP) so queue consumers depend only on what they use.
+ */
+export interface IServicelyQueueClient {
+  dequeue(request: DequeueRequest): Promise<AsyncQueueMessage[]>;
+  reply(request: QueueReplyRequest): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
 // Transport abstraction
 // ---------------------------------------------------------------------------
 
