@@ -11,7 +11,7 @@ An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform.
 ### In n8n (community nodes)
 
 1. Go to **Settings → Community Nodes → Install**.
-2. Enter `n8n-nodes-servicely` and confirm.
+2. Enter `@syn-con/n8n-nodes-servicely` and confirm.
 3. The **Servicely** node and **Servicely API** credential become available after n8n restarts.
 
 > Community nodes require self-hosted n8n, or n8n Cloud with verified community nodes enabled.
@@ -27,7 +27,7 @@ npm run dev
 ```
 
 `npm run dev` builds the node, links it into n8n's custom-nodes directory
-(`~/.n8n/custom/node_modules/n8n-nodes-servicely`), and starts n8n at
+(`~/.n8n/custom/node_modules/@syn-con/n8n-nodes-servicely`), and starts n8n at
 <http://localhost:5678>. n8n loads nodes at startup, so after changing code,
 stop it (Ctrl+C) and re-run `npm run dev` to pick up the changes.
 

@@ -48,6 +48,10 @@ function linkIntoCustomDir() {
     rmSync(linkPath, { recursive: true, force: true });
   }
 
+  // Scoped package names (@scope/name) nest under a scope directory that must
+  // exist before the link is created.
+  mkdirSync(dirname(linkPath), { recursive: true });
+
   // 'junction' works on Windows without admin rights; it is ignored elsewhere.
   symlinkSync(projectRoot, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
   console.info(`▸ Linked ${pkgName} → ${linkPath}`);
