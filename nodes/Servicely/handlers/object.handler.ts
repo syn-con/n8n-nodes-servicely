@@ -1,33 +1,14 @@
 import type { IDataObject, IExecuteFunctions, INodeExecutionData } from 'n8n-workflow';
 
 import { DEFAULT_PAGE_SIZE } from '../constants';
-import { parseList } from '../methods/resolve';
-import type {
-  IServicelyClient,
-  ListQueryParams,
-  QueryCriterion,
-  QueryOperator,
-  ServicelyQuery,
-  ServicelyRecord,
-} from '../types';
+import { buildAndQuery, parseAdvancedQuery, type FilterCondition } from '../query';
+import type { IServicelyClient, ListQueryParams, ServicelyQuery, ServicelyRecord } from '../types';
 
 /** Field-value pair emitted by the `fieldsToSet` fixedCollection. */
 interface FieldEntry {
   name: string;
   value: string;
 }
-
-/** A single simple-mode filter row from the `filters` fixedCollection. */
-interface FilterCondition {
-  fieldName: string;
-  operator: QueryOperator;
-  value?: string;
-}
-
-/** Operators that take no value. */
-const VALUELESS_OPERATORS: ReadonlySet<QueryOperator> = new Set(['isempty', 'isnotempty']);
-/** Operators whose value is a comma-separated list. */
-const LIST_OPERATORS: ReadonlySet<QueryOperator> = new Set(['in', 'notIn', 'between']);
 
 /** Options bag telling n8n to return a resourceLocator's underlying value. */
 const EXTRACT_VALUE = { extractValue: true } as const;
@@ -58,43 +39,13 @@ function readSelectors(ctx: IExecuteFunctions, i: number): ListQueryParams {
   return params;
 }
 
-function readAdvancedQuery(ctx: IExecuteFunctions, i: number): ServicelyQuery | undefined {
-  const raw = ctx.getNodeParameter('options.query', i, '') as string | IDataObject;
-  if (!raw || (typeof raw === 'string' && raw.trim() === '')) {
-    return undefined;
-  }
-  if (typeof raw !== 'string') {
-    return raw as ServicelyQuery;
-  }
-  try {
-    return JSON.parse(raw) as ServicelyQuery;
-  } catch (error) {
-    throw new Error(`Invalid Query JSON: ${(error as Error).message}`);
-  }
-}
-
-/** Convert one simple-mode filter row into a query criterion. */
-function toCriterion(condition: FilterCondition): QueryCriterion {
-  const { fieldName, operator } = condition;
-  if (VALUELESS_OPERATORS.has(operator)) {
-    return { fieldName, operator };
-  }
-  if (LIST_OPERATORS.has(operator)) {
-    return { fieldName, operator, value: parseList(condition.value ?? '') };
-  }
-  return { fieldName, operator, value: condition.value ?? '' };
-}
-
-/** Build an AND query from the simple `filters` fixedCollection, if any rows are set. */
-function readSimpleQuery(ctx: IExecuteFunctions, i: number): ServicelyQuery | undefined {
-  const conditions = ctx.getNodeParameter('filters.conditions', i, []) as FilterCondition[];
-  const criteria = conditions.filter((c) => c.fieldName).map(toCriterion);
-  return criteria.length > 0 ? { and: criteria } : undefined;
-}
-
 /** Advanced JSON query wins when present; otherwise fall back to the simple filter builder. */
 function readQuery(ctx: IExecuteFunctions, i: number): ServicelyQuery | undefined {
-  return readAdvancedQuery(ctx, i) ?? readSimpleQuery(ctx, i);
+  const advanced = parseAdvancedQuery(ctx.getNodeParameter('options.query', i, '') as string | IDataObject);
+  if (advanced) {
+    return advanced;
+  }
+  return buildAndQuery(ctx.getNodeParameter('filters.conditions', i, []) as FilterCondition[]);
 }
 
 function applySort(ctx: IExecuteFunctions, i: number, params: ListQueryParams): void {

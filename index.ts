@@ -9,6 +9,7 @@ export * from './nodes/Servicely/types';
 export * from './nodes/Servicely/constants';
 export { ServicelyApi } from './credentials/ServicelyApi.credentials';
 export { Servicely } from './nodes/Servicely/Servicely.node';
+export { ServicelyTrigger } from './nodes/Servicely/ServicelyTrigger.node';
 export { ApiClient, type ApiClientOptions } from './nodes/Servicely/transport/ApiClient';
 export { AuthProvider } from './nodes/Servicely/transport/AuthProvider';
 export { RateLimiter, type SleepFn } from './nodes/Servicely/transport/RateLimiter';

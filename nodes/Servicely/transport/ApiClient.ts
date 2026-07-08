@@ -2,19 +2,24 @@ import {
   DEFAULT_MAX_RETRIES,
   DEFAULT_TIMEOUT_MS,
   ENDPOINTS,
+  QUEUE_IDENTIFIER,
   RESPONSE_HEADERS,
   RETRY_BASE_DELAY_MS,
   RETRY_MAX_DELAY_MS,
 } from '../constants';
 import { mapHttpError, ServicelyNetworkError } from '../errors';
 import type {
+  AsyncQueueMessage,
   BatchRequest,
   BatchResponse,
+  DequeueRequest,
   HttpMethod,
   HttpRequestFn,
   IServicelyClient,
+  IServicelyQueueClient,
   ListQueryParams,
   ListResponseMeta,
+  QueueReplyRequest,
   RawHttpResponse,
   ServicelyListResult,
   ServicelyRecord,
@@ -52,7 +57,7 @@ const defaultSleep: SleepFn = (ms) => new Promise((resolve) => setTimeout(resolv
  * - Transport via the injected HttpRequestFn (n8n helper in production, stub in tests).
  * - Unwraps the `{ data: ... }` envelope and maps error responses to typed errors.
  */
-export class ApiClient implements IServicelyClient {
+export class ApiClient implements IServicelyClient, IServicelyQueueClient {
   private readonly baseUrl: string;
   private readonly timeout: number;
   private readonly maxRetries: number;
@@ -107,6 +112,31 @@ export class ApiClient implements IServicelyClient {
     const body = { id: `n8n-batch-${Date.now()}`, requests };
     const res = await this.request({ method: 'POST', path: ENDPOINTS.batch, body });
     return res.body as BatchResponse;
+  }
+
+  /** Claim messages from a Servicely Async Integration queue (`action: dequeue`). */
+  async dequeue(request: DequeueRequest): Promise<AsyncQueueMessage[]> {
+    const body = {
+      action: 'dequeue',
+      identifier: QUEUE_IDENTIFIER,
+      queue: request.queue,
+      subject: request.subject,
+      request_count: request.requestCount,
+    };
+    const res = await this.request({ method: 'POST', path: ENDPOINTS.asyncIntegration, body });
+    return this.unwrapList<AsyncQueueMessage>(res.body);
+  }
+
+  /** Acknowledge a claimed message back to Servicely (success or failure). */
+  async reply(request: QueueReplyRequest): Promise<void> {
+    const body = {
+      reply_to: request.replyTo,
+      action: request.action,
+      identifier: QUEUE_IDENTIFIER,
+      status: request.status,
+      payload: request.payload,
+    };
+    await this.request({ method: 'POST', path: ENDPOINTS.asyncIntegration, body });
   }
 
   // -------------------------------------------------------------------------

@@ -19,7 +19,8 @@
       "dist/credentials/ServicelyApi.credentials.js"
     ],
     "nodes": [
-      "dist/nodes/Servicely/Servicely.node.js"
+      "dist/nodes/Servicely/Servicely.node.js",
+      "dist/nodes/Servicely/ServicelyTrigger.node.js"
     ]
   },
   "scripts": {

@@ -12,11 +12,28 @@ import { DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT_MS } from './constants';
 import { ServicelyError } from './errors';
 import { executeAttachmentOperation } from './handlers/attachment.handler';
 import { executeObjectOperation } from './handlers/object.handler';
+import { executeQueueOperation } from './handlers/queue.handler';
 import { nodeMethods } from './methods';
+import type { ApiClient } from './transport/ApiClient';
 import { buildClient } from './transport/clientFactory';
 import { attachmentProperties } from './descriptions/attachment.properties';
 import { commonProperties } from './descriptions/common.properties';
 import { objectProperties } from './descriptions/object.properties';
+import { queueProperties } from './descriptions/queue.properties';
+
+/** A resource's operation router. `ApiClient` satisfies every handler's client interface. */
+type ResourceRunner = (
+  ctx: IExecuteFunctions,
+  client: ApiClient,
+  operation: string,
+  i: number,
+) => Promise<INodeExecutionData[]>;
+
+const RESOURCE_RUNNERS: Record<string, ResourceRunner> = {
+  object: executeObjectOperation,
+  attachment: executeAttachmentOperation,
+  queue: executeQueueOperation,
+};
 
 /** Wrap any thrown error in n8n's NodeOperationError for display. */
 function toNodeError(ctx: IExecuteFunctions, error: unknown, itemIndex: number): NodeOperationError {
@@ -50,11 +67,13 @@ export class Servicely implements INodeType {
         options: [
           { name: 'Object', value: 'object' },
           { name: 'Attachment', value: 'attachment' },
+          { name: 'Queue', value: 'queue' },
         ],
         default: 'object',
       },
       ...objectProperties,
       ...attachmentProperties,
+      ...queueProperties,
       ...commonProperties,
     ],
   };
@@ -72,7 +91,7 @@ export class Servicely implements INodeType {
     const maxRetries = (requestOptions.maxRetries as number) ?? DEFAULT_MAX_RETRIES;
     const client = await buildClient(this, { timeout, maxRetries });
 
-    const runOperation = resource === 'attachment' ? executeAttachmentOperation : executeObjectOperation;
+    const runOperation = RESOURCE_RUNNERS[resource] ?? executeObjectOperation;
     const returnData: INodeExecutionData[] = [];
 
     for (let i = 0; i < items.length; i++) {

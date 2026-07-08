@@ -1,29 +1,9 @@
 import type { INodeProperties } from 'n8n-workflow';
 
-import { QUERY_OPERATORS } from '../constants';
+import { filtersProperty } from './filters';
 import { recordResourceLocator, tableResourceLocator } from './resourceLocators';
 
 const showForObject = { resource: ['object'] };
-
-/** Friendly labels for the query operators; values stay exact (single source: QUERY_OPERATORS). */
-const OPERATOR_LABELS: Record<string, string> = {
-  '=': 'Equals',
-  '!=': 'Not Equals',
-  startswith: 'Starts With',
-  contains: 'Contains',
-  doesnotcontain: 'Does Not Contain',
-  isempty: 'Is Empty',
-  isnotempty: 'Is Not Empty',
-  in: 'In (comma-separated)',
-  notIn: 'Not In (comma-separated)',
-  '<': 'Less Than',
-  '>': 'Greater Than',
-  '<=': 'Less Than or Equal',
-  '>=': 'Greater Than or Equal',
-  between: 'Between (comma-separated)',
-};
-
-const operatorOptions = QUERY_OPERATORS.map((op) => ({ name: OPERATOR_LABELS[op] ?? op, value: op }));
 
 /** Properties for the Object resource (CRUD over any Servicely table). */
 export const objectProperties: INodeProperties[] = [
@@ -73,46 +53,7 @@ export const objectProperties: INodeProperties[] = [
     description: 'Max number of results to return',
     displayOptions: { show: { ...showForObject, operation: ['getAll'], returnAll: [false] } },
   },
-  {
-    displayName: 'Filters',
-    name: 'filters',
-    type: 'fixedCollection',
-    typeOptions: { multipleValues: true },
-    default: {},
-    placeholder: 'Add Condition',
-    description: 'Simple conditions combined with AND. For OR/NOR or nested logic, use the raw Query (JSON) option instead.',
-    displayOptions: { show: { ...showForObject, operation: ['getAll'] } },
-    options: [
-      {
-        name: 'conditions',
-        displayName: 'Condition',
-        values: [
-          {
-            displayName: 'Field Name',
-            name: 'fieldName',
-            type: 'string',
-            default: '',
-            placeholder: 'State',
-            description: 'Field to filter on. Dot-walk relations are allowed (e.g. Requestor.Email).',
-          },
-          {
-            displayName: 'Operator',
-            name: 'operator',
-            type: 'options',
-            options: operatorOptions,
-            default: '=',
-          },
-          {
-            displayName: 'Value',
-            name: 'value',
-            type: 'string',
-            default: '',
-            description: 'Value to compare. For In/Not In/Between, provide a comma-separated list. Ignored for Is Empty / Is Not Empty.',
-          },
-        ],
-      },
-    ],
-  },
+  filtersProperty({ show: { ...showForObject, operation: ['getAll'] } }),
   {
     displayName: 'Fields to Set',
     name: 'fieldsToSet',
