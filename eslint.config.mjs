@@ -48,7 +48,7 @@ const productionRules = {
 };
 
 export default [
-  { ignores: ['dist/**', 'node_modules/**', 'src/__tests__/**', '**/*.test.ts', '*.js', '*.cjs', '*.mjs', 'coverage/**'] },
+  { ignores: ['dist/**', 'node_modules/**', '**/__tests__/**', '**/*.test.ts', '*.js', '*.cjs', '*.mjs', 'coverage/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   { files: ['**/*.ts'], rules: productionRules },

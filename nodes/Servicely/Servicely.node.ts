@@ -31,7 +31,7 @@ export class Servicely implements INodeType {
   description: INodeTypeDescription = {
     displayName: 'Servicely',
     name: 'servicely',
-    icon: { light: 'file:servicely.svg', dark: 'file:servicely.dark.svg' },
+    icon: { light: 'file:../../icons/servicely.svg', dark: 'file:../../icons/servicely.dark.svg' },
     group: ['transform'],
     version: 1,
     subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',

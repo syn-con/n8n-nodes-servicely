@@ -139,11 +139,12 @@ Tests use dependency injection (a stub `HttpRequestFn` / mock `IServicelyClient`
 
 ### Architecture
 
-- `src/transport/` — framework-agnostic `ApiClient` (retry, rate limiting, error mapping), `AuthProvider` (Basic/Bearer/HMAC strategies), `RateLimiter` (token bucket).
-- `src/handlers/` — per-resource operation routing (`object`, `attachment`) depending on the narrow `IServicelyClient` interface.
-- `src/descriptions/` — n8n property trees (declarative UI).
-- `src/Servicely.node.ts` — the node: decrypts credentials, builds the client, routes to a handler.
-- Endpoints, operators, and header names live only in `src/constants.ts`.
+- `nodes/Servicely/transport/` — framework-agnostic `ApiClient` (retry, rate limiting, error mapping), `AuthProvider` (Basic/Bearer/HMAC strategies), `RateLimiter` (token bucket).
+- `nodes/Servicely/handlers/` — per-resource operation routing (`object`, `attachment`) depending on the narrow `IServicelyClient` interface.
+- `nodes/Servicely/descriptions/` — n8n property trees (declarative UI).
+- `nodes/Servicely/Servicely.node.ts` — the node: decrypts credentials, builds the client, routes to a handler.
+- `credentials/ServicelyApi.credentials.ts` — the credential type (auth fields, test request).
+- Endpoints, operators, and header names live only in `nodes/Servicely/constants.ts`.
 
 ## Resources
 
