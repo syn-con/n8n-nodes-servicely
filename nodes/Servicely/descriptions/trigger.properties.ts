@@ -2,7 +2,7 @@ import type { INodeProperties } from 'n8n-workflow';
 
 import { DEFAULT_DEQUEUE_COUNT } from '../constants';
 import { filtersProperty } from './filters';
-import { tableResourceLocator } from './resourceLocators';
+import { searchResourceLocator, tableResourceLocator } from './resourceLocators';
 
 const showForQueue = { triggerOn: ['queue'] };
 const showForObject = { triggerOn: ['object'] };
@@ -34,26 +34,24 @@ export const triggerProperties: INodeProperties[] = [
   },
 
   // --- Async Queue --------------------------------------------------------
-  {
-    displayName: 'Queue',
+  searchResourceLocator({
     name: 'queue',
-    type: 'string',
-    default: '',
-    required: true,
-    placeholder: 'my-integration-queue',
-    description: 'Name of the Async Integration queue to claim messages from',
+    displayName: 'Queue',
+    description: 'Async Integration queue to claim messages from. The list shows ActionProviderInstance records with ConnectionType "async_integration"; the selected ConnectionString is used as the queue.',
+    searchListMethod: 'searchQueues',
     displayOptions: { show: showForQueue },
-  },
-  {
-    displayName: 'Action Name',
+    manualHint: 'Enter the queue ConnectionString or an expression',
+    manualPlaceholder: 'my-integration-queue',
+  }),
+  searchResourceLocator({
     name: 'subject',
-    type: 'string',
-    default: '',
-    required: true,
-    placeholder: 'process-incident',
-    description: 'The action/subject identifying which messages to claim (the queue "subject")',
+    displayName: 'Action Name',
+    description: 'Action/subject identifying which messages to claim. The list shows Action records for the selected queue\'s provider instance; the selected Command is used as the subject.',
+    searchListMethod: 'searchActions',
     displayOptions: { show: showForQueue },
-  },
+    manualHint: 'Enter the action command or an expression',
+    manualPlaceholder: 'process-incident',
+  }),
   {
     displayName: 'Messages Per Poll',
     name: 'requestCount',

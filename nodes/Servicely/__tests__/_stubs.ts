@@ -104,6 +104,7 @@ export function makeLoadOptionsCtx(options: LoadOptionsCtxOptions = {}): ILoadOp
     getNodeParameter: (name: string, fallback?: unknown) => (name in params ? params[name] : fallback),
     getCredentials: async () => credentials,
     getNode: () => ({ name: 'Servicely' }),
+    logger: { error: () => {}, warn: () => {}, info: () => {}, debug: () => {} },
     helpers: { httpRequest: http },
   };
   return ctx as unknown as ILoadOptionsFunctions;
