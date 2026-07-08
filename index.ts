@@ -1,5 +1,5 @@
 /**
- * Public entry point for the n8n-nodes-servicely package.
+ * Public entry point for the @syn-con/n8n-nodes-servicely package.
  *
  * n8n discovers nodes and credentials via the `n8n` block in package.json;
  * this module re-exports the public type surface and credential class for

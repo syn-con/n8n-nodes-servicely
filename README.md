@@ -11,7 +11,7 @@ An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform.
 ### In n8n (community nodes)
 
 1. Go to **Settings → Community Nodes → Install**.
-2. Enter `n8n-nodes-servicely` and confirm.
+2. Enter `@syn-con/n8n-nodes-servicely` and confirm.
 3. The **Servicely** node and **Servicely API** credential become available after n8n restarts.
 
 > Community nodes require self-hosted n8n, or n8n Cloud with verified community nodes enabled.
@@ -27,7 +27,7 @@ npm run dev
 ```
 
 `npm run dev` builds the node, links it into n8n's custom-nodes directory
-(`~/.n8n/custom/node_modules/n8n-nodes-servicely`), and starts n8n at
+(`~/.n8n/custom/node_modules/@syn-con/n8n-nodes-servicely`), and starts n8n at
 <http://localhost:5678>. n8n loads nodes at startup, so after changing code,
 stop it (Ctrl+C) and re-run `npm run dev` to pick up the changes.
 
@@ -108,8 +108,8 @@ The **Servicely Trigger** is a polling node — n8n adds a **Poll Times** schedu
 
 **Trigger On → Async Queue Message** — claims messages from a Servicely Async Integration queue (`POST {instanceUrl}/controller/AsyncIntegration`, `action: "dequeue"`), the same mechanism as the Node-RED Queue node.
 
-- **Queue** — the queue name to claim from.
-- **Action Name** — the subject identifying which messages to claim.
+- **Queue** — the queue to claim from. **From List** shows `ActionProviderInstance` records with `ConnectionType = async_integration`, using each record's `ConnectionString` as the value; or enter a ConnectionString / expression manually.
+- **Action Name** — the subject identifying which messages to claim. **From List** shows `Action` records for the selected queue's provider instance (`ProviderInstance` = the chosen instance's id), using each Action's `Command` as the value; or enter a command / expression manually.
 - **Messages Per Poll** — max messages claimed per poll (default 10).
 - Each emitted item is the message payload (a JSON object payload becomes the item's `json` directly; anything else is wrapped under `payload`). Reply metadata is attached under `_servicely` (`replyTo`, `queue`, `subject`).
 

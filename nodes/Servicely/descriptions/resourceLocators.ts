@@ -56,6 +56,50 @@ export function tableResourceLocator(config: TableLocatorConfig): INodePropertie
   };
 }
 
+interface SearchLocatorConfig {
+  name: string;
+  displayName: string;
+  description: string;
+  /** `methods.listSearch` key that populates the "From List" mode. */
+  searchListMethod: string;
+  displayOptions: IDisplayOptions;
+  /** Hint + placeholder for the manual "By Name" mode. */
+  manualHint: string;
+  manualPlaceholder?: string;
+}
+
+/**
+ * A generic searchable reference whose "From List" mode is backed by a
+ * listSearch method and whose value is a plain string (e.g. the trigger's
+ * Queue and Action Name pickers), with a manual name/expression fallback.
+ */
+export function searchResourceLocator(config: SearchLocatorConfig): INodeProperties {
+  return {
+    displayName: config.displayName,
+    name: config.name,
+    type: 'resourceLocator',
+    default: { mode: 'list', value: '' },
+    required: true,
+    description: config.description,
+    displayOptions: config.displayOptions,
+    modes: [
+      {
+        displayName: 'From List',
+        name: 'list',
+        type: 'list',
+        typeOptions: { searchListMethod: config.searchListMethod, searchable: true },
+      },
+      {
+        displayName: 'By Name',
+        name: 'name',
+        type: 'string',
+        hint: config.manualHint,
+        placeholder: config.manualPlaceholder,
+      },
+    ],
+  };
+}
+
 /** A Record reference: dynamic searchable list, or a typed/expression record id. */
 export function recordResourceLocator(config: RecordLocatorConfig): INodeProperties {
   return {

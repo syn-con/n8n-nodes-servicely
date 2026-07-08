@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildAndQuery, parseAdvancedQuery, toCriterion, type FilterCondition } from '../query';
+import { buildAndQuery, EQUALS_UI_VALUE, parseAdvancedQuery, toCriterion, type FilterCondition } from '../query';
 
 describe('query — toCriterion', () => {
+  it('translates the Equals UI token (eq) to the "=" API operator', () => {
+    expect(toCriterion({ fieldName: 'State', operator: EQUALS_UI_VALUE, value: 'Open' })).toEqual({
+      fieldName: 'State',
+      operator: '=',
+      value: 'Open',
+    });
+  });
+
   it('drops the value for valueless operators', () => {
     expect(toCriterion({ fieldName: 'ClosedOn', operator: 'isempty' })).toEqual({
       fieldName: 'ClosedOn',

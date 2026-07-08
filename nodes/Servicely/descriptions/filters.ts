@@ -1,6 +1,7 @@
 import type { IDisplayOptions, INodeProperties, INodePropertyOptions } from 'n8n-workflow';
 
 import { QUERY_OPERATORS } from '../constants';
+import { EQUALS_UI_VALUE } from '../query';
 
 /** Friendly labels for the query operators; values stay exact (single source: QUERY_OPERATORS). */
 const OPERATOR_LABELS: Record<string, string> = {
@@ -20,10 +21,14 @@ const OPERATOR_LABELS: Record<string, string> = {
   between: 'Between (comma-separated)',
 };
 
-/** `options`-ready operator choices, shared by every filter builder. */
+/**
+ * `options`-ready operator choices, shared by every filter builder. The Equals
+ * operator uses `EQUALS_UI_VALUE` instead of `=` because n8n would treat a `=`
+ * value as an expression (see query.ts); it is translated back when querying.
+ */
 export const operatorOptions: INodePropertyOptions[] = QUERY_OPERATORS.map((op) => ({
   name: OPERATOR_LABELS[op] ?? op,
-  value: op,
+  value: op === '=' ? EQUALS_UI_VALUE : op,
 }));
 
 /**
@@ -59,7 +64,7 @@ export function filtersProperty(displayOptions: IDisplayOptions): INodePropertie
             name: 'operator',
             type: 'options',
             options: operatorOptions,
-            default: '=',
+            default: EQUALS_UI_VALUE,
           },
           {
             displayName: 'Value',

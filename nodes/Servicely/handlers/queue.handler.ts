@@ -42,8 +42,8 @@ function toItem(message: AsyncQueueMessage, request: DequeueRequest): INodeExecu
 /** Dequeue messages from the Async Integration queue and emit one item each. */
 export async function pollQueue(ctx: IPollFunctions, client: IServicelyQueueClient): Promise<INodeExecutionData[]> {
   const request: DequeueRequest = {
-    queue: (ctx.getNodeParameter('queue', '') as string).trim(),
-    subject: (ctx.getNodeParameter('subject', '') as string).trim(),
+    queue: String(ctx.getNodeParameter('queue', '', { extractValue: true }) ?? '').trim(),
+    subject: String(ctx.getNodeParameter('subject', '', { extractValue: true }) ?? '').trim(),
     requestCount: ctx.getNodeParameter('requestCount', DEFAULT_DEQUEUE_COUNT) as number,
   };
   const messages = await client.dequeue(request);
