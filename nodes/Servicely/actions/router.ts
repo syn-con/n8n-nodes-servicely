@@ -1,6 +1,7 @@
 import { type IExecuteFunctions, type INodeExecutionData, NodeError, NodeOperationError } from 'n8n-workflow';
 
 import * as attachment from './attachment';
+import * as controller from './controller';
 import type { Servicely } from './node.type';
 import * as object from './object';
 import * as queue from './queue';
@@ -23,6 +24,8 @@ function actionFor(servicely: Servicely): Action | undefined {
       return attachment[servicely.operation];
     case 'queue':
       return queue[servicely.operation];
+    case 'controller':
+      return controller[servicely.operation];
     default:
       return undefined;
   }

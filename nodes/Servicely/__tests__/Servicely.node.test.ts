@@ -15,13 +15,14 @@ async function run(options: ExecuteCtxOptions) {
 }
 
 describe('node description', () => {
-  it('declares the three resources and the credential', () => {
+  it('declares every resource and the credential', () => {
     expect(node.description.credentials).toEqual([{ name: 'servicelyApi', required: true }]);
     const resource = node.description.properties.find((property) => property.name === 'resource');
     expect(resource?.options?.map((option) => 'value' in option && option.value)).toEqual([
       'object',
       'attachment',
       'queue',
+      'controller',
     ]);
   });
 
@@ -306,6 +307,97 @@ describe('queue resource', () => {
   it('rejects an unknown operation', async () => {
     await expect(run({ params: { resource: 'queue', operation: 'replyMaybe' } })).rejects.toThrow(
       /The operation "replyMaybe" is not supported for resource "queue"/,
+    );
+  });
+});
+
+describe('controller resource', () => {
+  it('posts the raw JSON body to the selected controller', async () => {
+    const http = makeHttpStub([ok({ result: 'done' })]);
+    const items = await run({
+      http,
+      params: {
+        resource: 'controller',
+        operation: 'call',
+        controllerName: 'MyController',
+        body: '{"foo":"bar","n":1}',
+      },
+    });
+
+    expect(http.calls[0].options.method).toBe('POST');
+    expect(http.calls[0].options.url).toBe('/controller/MyController');
+    expect(http.calls[0].options.body).toEqual({ foo: 'bar', n: 1 });
+    expect(items).toEqual([{ json: { result: 'done' }, pairedItem: { item: 0 } }]);
+  });
+
+  it('accepts a body that arrives as an object from an expression', async () => {
+    const http = makeHttpStub([ok({})]);
+    await run({
+      http,
+      params: { resource: 'controller', operation: 'call', controllerName: 'MyController', body: { foo: 'bar' } },
+    });
+
+    expect(http.calls[0].options.body).toEqual({ foo: 'bar' });
+  });
+
+  it('sends an empty object when the body is blank', async () => {
+    const http = makeHttpStub([ok({})]);
+    await run({
+      http,
+      params: { resource: 'controller', operation: 'call', controllerName: 'MyController', body: '  ' },
+    });
+
+    expect(http.calls[0].options.body).toEqual({});
+  });
+
+  it('fans a list response out to one item per entry', async () => {
+    const http = makeHttpStub([ok([{ id: '1' }, { id: '2' }])]);
+    const items = await run({
+      http,
+      params: { resource: 'controller', operation: 'call', controllerName: 'MyController' },
+    });
+
+    expect(items).toEqual([
+      { json: { id: '1' }, pairedItem: { item: 0 } },
+      { json: { id: '2' }, pairedItem: { item: 0 } },
+    ]);
+  });
+
+  it('wraps a scalar response and reports success for an empty one', async () => {
+    const scalar = await run({
+      http: makeHttpStub([ok('queued')]),
+      params: { resource: 'controller', operation: 'call', controllerName: 'MyController' },
+    });
+    expect(scalar[0].json).toEqual({ data: 'queued' });
+
+    const empty = await run({
+      http: makeHttpStub([{ status: 204 }]),
+      params: { resource: 'controller', operation: 'call', controllerName: 'MyController' },
+    });
+    expect(empty[0].json).toEqual({ success: true });
+  });
+
+  it('rejects a malformed body', async () => {
+    await expect(
+      run({ params: { resource: 'controller', operation: 'call', controllerName: 'MyController', body: '{nope' } }),
+    ).rejects.toThrow(/Invalid Body JSON/);
+  });
+
+  it('rejects a body that is not a JSON object', async () => {
+    await expect(
+      run({ params: { resource: 'controller', operation: 'call', controllerName: 'MyController', body: '[1,2]' } }),
+    ).rejects.toThrow(/Body must be a JSON object/);
+  });
+
+  it('rejects a missing controller name', async () => {
+    await expect(run({ params: { resource: 'controller', operation: 'call', controllerName: '' } })).rejects.toThrow(
+      /No controller selected/,
+    );
+  });
+
+  it('rejects an unknown operation', async () => {
+    await expect(run({ params: { resource: 'controller', operation: 'invoke' } })).rejects.toThrow(
+      /The operation "invoke" is not supported for resource "controller"/,
     );
   });
 });

@@ -2,6 +2,7 @@ import type { INodeProperties } from 'n8n-workflow';
 import { describe, expect, it } from 'vitest';
 
 import * as attachment from '../actions/attachment';
+import * as controller from '../actions/controller';
 import * as object from '../actions/object';
 import * as queue from '../actions/queue';
 import { versionDescription } from '../actions/versionDescription';
@@ -13,7 +14,7 @@ import { listSearchMethods } from '../SearchFunctions';
  * property tree and the router would silently disagree.
  */
 
-const RESOURCES = { object, attachment, queue };
+const RESOURCES = { object, attachment, queue, controller };
 
 /** Operation values offered by a resource's Operation selector. */
 function offeredOperations(properties: INodeProperties[], resource: string): string[] {

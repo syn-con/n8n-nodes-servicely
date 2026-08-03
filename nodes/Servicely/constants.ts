@@ -5,8 +5,14 @@ import type { QueryOperator } from './types';
 /** Page size used when paging through all results (matches the API default). */
 export const DEFAULT_PAGE_SIZE = 200;
 
+/** Controller endpoints live at the instance root, not under /v1. */
+export const CONTROLLER_PATH_PREFIX = '/controller';
+
 /** Async Integration queue controller (dequeue/reply). Not versioned under /v1. */
-export const ASYNC_INTEGRATION_PATH = '/controller/AsyncIntegration';
+export const ASYNC_INTEGRATION_PATH = `${CONTROLLER_PATH_PREFIX}/AsyncIntegration`;
+
+/** Table listing the instance's controllers (backs the Controller picker). */
+export const CONTROLLER_TABLE = 'SystemController';
 
 /** Identifier sent as the `identifier` field on Async Integration queue calls. */
 export const QUEUE_IDENTIFIER = 'n8n';

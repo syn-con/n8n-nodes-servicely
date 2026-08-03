@@ -5,6 +5,7 @@ type ServicelyMap = {
   object: 'create' | 'delete' | 'get' | 'getAll' | 'update';
   attachment: 'download' | 'list' | 'upload';
   queue: 'replyFailure' | 'replySuccess';
+  controller: 'call';
 };
 
 /**

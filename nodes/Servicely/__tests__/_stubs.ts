@@ -43,6 +43,27 @@ export function makeHttpStub(script: HttpStep[]): HttpStub {
   return { fn, calls, count: () => n };
 }
 
+/**
+ * Build a `httpRequestWithAuthentication` that answers from the request itself
+ * (its path and `page`) rather than from a queue. Paging tests need this: pages
+ * of concurrent requests do not arrive in a predictable order, so a positional
+ * script cannot say which page a given response belongs to.
+ */
+export function makeRoutedHttpStub(route: (url: string, page: number) => HttpStep): HttpStub {
+  const calls: HttpCall[] = [];
+  let n = 0;
+  const fn = async (credentialsType: string, options: IHttpRequestOptions) => {
+    calls.push({ credentialsType, options });
+    n += 1;
+    const step = route(String(options.url), Number((options.qs as { page?: unknown })?.page ?? 1));
+    if ('throw' in step) {
+      throw new Error(step.throw);
+    }
+    return { statusCode: step.status, headers: step.headers ?? {}, body: step.body };
+  };
+  return { fn, calls, count: () => n };
+}
+
 /** A 200 response carrying Servicely's `{ data }` envelope. */
 export function ok(data: unknown): HttpStep {
   return { status: 200, body: { data } };

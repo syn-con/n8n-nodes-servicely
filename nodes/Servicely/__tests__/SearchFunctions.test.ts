@@ -6,19 +6,42 @@ import {
   listSearchMethods,
   searchActions,
   searchAttachments,
+  searchControllers,
   searchObjectRecords,
   searchParentRecords,
   searchQueues,
   searchTables,
 } from '../SearchFunctions';
-import { makeHttpStub, makeLoadOptionsCtx, ok, type HttpStep, type ParamMap } from './_stubs';
+import {
+  makeHttpStub,
+  makeLoadOptionsCtx,
+  makeRoutedHttpStub,
+  ok,
+  type HttpStep,
+  type HttpStub,
+  type ParamMap,
+} from './_stubs';
 
-function ctxFor(script: HttpStep[], params: ParamMap = {}) {
-  const http = makeHttpStub(script);
-  // Retries are covered in GenericFunctions.test.ts; disable them so the
-  // best-effort discovery probes here do not sit in real backoff.
+/** Retries are covered in GenericFunctions.test.ts; disable them so the
+ * best-effort discovery probes here do not sit in real backoff. */
+function ctxWith(http: HttpStub, params: ParamMap = {}) {
   return { ctx: makeLoadOptionsCtx({ http, params: { requestOptions: { maxRetries: 0 }, ...params } }), http };
 }
+
+function ctxFor(script: HttpStep[], params: ParamMap = {}) {
+  return ctxWith(makeHttpStub(script), params);
+}
+
+/** A page of `size` throwaway records, so a picker sees a "full" page. */
+function fullPage(size: number, prefix = 'r') {
+  return Array.from({ length: size }, (_, i) => ({ id: `${prefix}${i}`, Name: `${prefix}-name-${i}` }));
+}
+
+/** The page size a searchable picker requests (SEARCH_PAGE_SIZE). */
+const PICKER_PAGE_SIZE = 100;
+
+/** The page size table discovery requests (DISCOVERY_PAGE_SIZE). */
+const DISCOVERY_PAGE_SIZE = 2000;
 
 /** A `_batch` reply where every probed table exists. */
 function batchAllOk(count: number): HttpStep {
@@ -42,6 +65,7 @@ describe('listSearchMethods', () => {
     expect(Object.keys(listSearchMethods.listSearch).sort()).toEqual([
       'searchActions',
       'searchAttachments',
+      'searchControllers',
       'searchObjectRecords',
       'searchParentRecords',
       'searchQueues',
@@ -196,6 +220,154 @@ describe('searchQueues', () => {
       { name: 'Incident Queue (incident-queue)', value: 'incident-queue' },
       { name: 'bare-queue', value: 'bare-queue' },
     ]);
+  });
+});
+
+describe('picker pagination', () => {
+  it('hands back a token for the next page when the page came back full', async () => {
+    const { ctx } = ctxFor([ok(fullPage(PICKER_PAGE_SIZE))], { tableName: 'Incident' });
+
+    const result = await searchObjectRecords.call(ctx as ILoadOptionsFunctions);
+
+    expect(result.results).toHaveLength(PICKER_PAGE_SIZE);
+    expect(result.paginationToken).toBe('2');
+  });
+
+  it('omits the token once a short page ends the table', async () => {
+    const { ctx } = ctxFor([ok(fullPage(PICKER_PAGE_SIZE - 1))], { tableName: 'Incident' });
+
+    const result = await searchObjectRecords.call(ctx as ILoadOptionsFunctions);
+
+    expect(result.paginationToken).toBeUndefined();
+  });
+
+  it('requests the page the token names and advances it', async () => {
+    const { ctx, http } = ctxFor([ok(fullPage(PICKER_PAGE_SIZE))], { tableName: 'Incident' });
+
+    const result = await searchObjectRecords.call(ctx as ILoadOptionsFunctions, undefined, '3');
+
+    expect(http.calls[0].options.qs).toEqual({ page: 3, page_size: PICKER_PAGE_SIZE });
+    expect(result.paginationToken).toBe('4');
+  });
+
+  it('keeps paging when a filter empties a full page', async () => {
+    const { ctx } = ctxFor([ok(fullPage(PICKER_PAGE_SIZE))], { tableName: 'Incident' });
+
+    const result = await searchObjectRecords.call(ctx as ILoadOptionsFunctions, 'no-such-record');
+
+    expect(result.results).toEqual([]);
+    expect(result.paginationToken).toBe('2');
+  });
+
+  it('restarts at page 1 on a token it cannot read', async () => {
+    const { ctx, http } = ctxFor([ok([{ id: 'r1' }])], { tableName: 'Incident' });
+
+    await searchObjectRecords.call(ctx as ILoadOptionsFunctions, undefined, 'not-a-page');
+
+    expect(http.calls[0].options.qs).toMatchObject({ page: 1 });
+  });
+
+  it('paginates the queue, action, and controller pickers too', async () => {
+    const queues = ctxFor([ok(fullPage(PICKER_PAGE_SIZE).map((r) => ({ ...r, ConnectionString: r.id })))]);
+    await expect(searchQueues.call(queues.ctx as ILoadOptionsFunctions, undefined, '2')).resolves.toMatchObject({
+      paginationToken: '3',
+    });
+    expect(queues.http.calls[0].options.qs).toMatchObject({ page: 2, page_size: PICKER_PAGE_SIZE });
+
+    const actions = ctxFor(
+      [ok([{ id: 'p1' }]), ok(fullPage(PICKER_PAGE_SIZE).map((r) => ({ ...r, Command: r.id })))],
+      { queue: 'q' },
+    );
+    await expect(searchActions.call(actions.ctx as ILoadOptionsFunctions, undefined, '2')).resolves.toMatchObject({
+      paginationToken: '3',
+    });
+    expect(actions.http.calls[1].options.qs).toMatchObject({ page: 2, page_size: PICKER_PAGE_SIZE });
+
+    const controllers = ctxFor([ok(fullPage(PICKER_PAGE_SIZE))]);
+    await expect(
+      searchControllers.call(controllers.ctx as ILoadOptionsFunctions, undefined, '2'),
+    ).resolves.toMatchObject({ paginationToken: '3' });
+    expect(controllers.http.calls[0].options.qs).toMatchObject({ page: 2, page_size: PICKER_PAGE_SIZE });
+  });
+});
+
+describe('discovery pagination', () => {
+  /** Answer SequenceNumber per page; every other table is empty. */
+  function discoveryCtx(sequenceNumber: (page: number) => HttpStep) {
+    const http = makeRoutedHttpStub((url, page) => {
+      if (url === '/v1/SequenceNumber') {
+        return sequenceNumber(page);
+      }
+      if (url === '/v1/_batch') {
+        return batchAllOk(DISCOVERY_PAGE_SIZE + 1);
+      }
+      return ok([]);
+    });
+    return ctxWith(http);
+  }
+
+  it('pages a metadata source to the end instead of stopping at one page', async () => {
+    const page1 = Array.from({ length: DISCOVERY_PAGE_SIZE }, (_, i) => ({ id: String(i), Table: `T${i}` }));
+    const { ctx, http } = discoveryCtx((page) => (page === 1 ? ok(page1) : ok([{ id: 'last', Table: 'ZLastTable' }])));
+
+    const tables = await discoverTables(ctx);
+
+    expect(tables).toHaveLength(DISCOVERY_PAGE_SIZE + 1);
+    expect(tables).toContain('ZLastTable');
+    expect(http.calls.filter((call) => call.options.url === '/v1/SequenceNumber')).toHaveLength(2);
+  });
+
+  it('keeps the pages it already has when a later page fails', async () => {
+    const page1 = Array.from({ length: DISCOVERY_PAGE_SIZE }, (_, i) => ({ id: String(i), Table: `T${i}` }));
+    const { ctx } = discoveryCtx((page) => (page === 1 ? ok(page1) : { throw: 'connection reset' }));
+
+    await expect(discoverTables(ctx)).resolves.toHaveLength(DISCOVERY_PAGE_SIZE);
+  });
+
+  it('stops at the page ceiling when a source never returns a short page', async () => {
+    const { ctx, http } = discoveryCtx((page) =>
+      ok(Array.from({ length: DISCOVERY_PAGE_SIZE }, (_, i) => ({ id: `${page}-${i}`, Table: `T${page}-${i}` }))),
+    );
+
+    await discoverTables(ctx);
+
+    // MAX_DISCOVERY_PAGES, rather than looping until the instance runs dry.
+    expect(http.calls.filter((call) => call.options.url === '/v1/SequenceNumber')).toHaveLength(10);
+  });
+});
+
+describe('searchControllers', () => {
+  it('lists SystemController records keyed by Name, labelled and sorted', async () => {
+    const { ctx, http } = ctxFor([
+      ok([
+        { id: 'c1', Name: 'MyController' },
+        { id: 'c2', Name: 'AsyncIntegration', Label: 'Async Integration' },
+        { id: 'c3', ClassName: 'LegacyController' },
+        { id: 'c4', Description: 'no name at all' },
+      ]),
+    ]);
+
+    const result = await searchControllers.call(ctx as ILoadOptionsFunctions);
+
+    expect(http.calls[0].options.url).toBe('/v1/SystemController');
+    expect(result.results).toEqual([
+      { name: 'Async Integration (AsyncIntegration)', value: 'AsyncIntegration' },
+      { name: 'LegacyController', value: 'LegacyController' },
+      { name: 'MyController', value: 'MyController' },
+    ]);
+  });
+
+  it('filters on the label as well as the name', async () => {
+    const { ctx } = ctxFor([
+      ok([
+        { id: 'c1', Name: 'AsyncIntegration', Label: 'Async Integration' },
+        { id: 'c2', Name: 'MyController' },
+      ]),
+    ]);
+
+    const result = await searchControllers.call(ctx as ILoadOptionsFunctions, 'async');
+
+    expect(result.results).toEqual([{ name: 'Async Integration (AsyncIntegration)', value: 'AsyncIntegration' }]);
   });
 });
 

@@ -1,5 +1,6 @@
 import type { IDataObject, ILoadOptionsFunctions, INodeListSearchItems, INodeListSearchResult } from 'n8n-workflow';
 
+import { CONTROLLER_TABLE } from './constants';
 import { servicelyApiRequest, toRecordList } from './GenericFunctions';
 import type { BatchRequest, BatchResponse, ServicelyRecord } from './types';
 
@@ -7,31 +8,59 @@ import type { BatchRequest, BatchResponse, ServicelyRecord } from './types';
  * `methods.listSearch` implementations backing the "From List" mode of every
  * resourceLocator: the Table and Record pickers on the Servicely node, and the
  * Queue / Action Name pickers on the trigger.
+ *
+ * Every searchable picker is paginated: n8n calls the method with the
+ * `paginationToken` from the previous result once the user scrolls past the
+ * loaded entries, so a table with more records than one page still browses to
+ * the end. The token is simply the next page number — Servicely's list
+ * endpoints are offset-based (`page` / `page_size`) and expose no cursor.
  */
 
-/** How many records to fetch for a searchable picker (first page only). */
+/** How many records one picker page fetches. */
 const SEARCH_PAGE_SIZE = 100;
 
 /** Fields tried, in order, to derive a human-readable label for a record. */
 const LABEL_FIELDS = ['Number', 'Name', 'Title', 'ShortDescription', 'FileName', 'DisplayName', 'Email', 'Label'];
+
+/** Fields tried, in order, for a controller's display label (its Name is the fallback). */
+const CONTROLLER_LABEL_FIELDS = ['Label', 'Title', 'Description'];
 
 /** Async Integration lookups: the provider table, action table, and connection-type filter. */
 const QUEUE_TABLE = 'ActionProviderInstance';
 const ACTION_TABLE = 'Action';
 const ASYNC_CONNECTION_TYPE = 'async_integration';
 
-/** Fetch the first page of a table, optionally filtered by a complex query. */
+/** Fetch one page of a table, optionally filtered by a complex query. */
 async function listRecords(
   ctx: ILoadOptionsFunctions,
   table: string,
   query?: IDataObject,
   pageSize = SEARCH_PAGE_SIZE,
+  page = 1,
 ): Promise<ServicelyRecord[]> {
-  const qs: IDataObject = { page: 1, page_size: pageSize };
+  const qs: IDataObject = { page, page_size: pageSize };
   if (query) {
     qs.query = JSON.stringify(query);
   }
   return toRecordList<ServicelyRecord>(await servicelyApiRequest.call(ctx, 'GET', `/v1/${table}`, undefined, qs));
+}
+
+/** 1-indexed page a picker request is asking for; anything unparsable restarts at 1. */
+function pageFrom(paginationToken?: string): number {
+  const page = Number.parseInt(paginationToken ?? '', 10);
+  return Number.isFinite(page) && page > 0 ? page : 1;
+}
+
+/**
+ * One picker page: the items to show, plus the token for the page after it.
+ *
+ * The token is decided by how many records the API returned (a full page means
+ * there may be more), never by how many survived filtering — a filter can empty
+ * a page whose successors still hold matches, and dropping the token there would
+ * strand them.
+ */
+function pickerPage(results: INodeListSearchItems[], page: number, fetched: number): INodeListSearchResult {
+  return fetched < SEARCH_PAGE_SIZE ? { results } : { results, paginationToken: String(page + 1) };
 }
 
 /** Case-insensitive filter over a search item's name and value. */
@@ -74,23 +103,26 @@ function searchItem(label: string, value: string): INodeListSearchItems {
 }
 
 /**
- * Fetch a table's first page as search items, filtered client-side (the REST API
- * has no generic text-search parameter), so matches beyond the first page are
- * not surfaced.
+ * Fetch one page of a table as search items, filtered client-side (the REST API
+ * has no generic text-search parameter). Filtering per page rather than
+ * server-side is why the token keeps flowing while pages remain: n8n asks for
+ * the next one as the user scrolls, so matches deeper in the table still arrive.
  */
 async function searchRecordsInTable(
   ctx: ILoadOptionsFunctions,
   table: string,
   filter?: string,
+  paginationToken?: string,
 ): Promise<INodeListSearchResult> {
   if (!table) {
     return { results: [] };
   }
-  const records = await listRecords(ctx, table);
+  const page = pageFrom(paginationToken);
+  const records = await listRecords(ctx, table, undefined, SEARCH_PAGE_SIZE, page);
   const results = records
     .map((record) => searchItem(recordLabel(record), String(record.id)))
     .filter((item) => matchesFilter(item, filter));
-  return { results };
+  return pickerPage(results, page, records.length);
 }
 
 // ---------------------------------------------------------------------------
@@ -118,8 +150,16 @@ const TABLE_SOURCES: ReadonlyArray<{ table: string; field: string }> = [
   { table: 'cmdbmetadata', field: 'name' },
 ];
 
-/** Numbering/CMDB registries are small; one large page captures them all. */
+/** Numbering/CMDB registries are small, so discovery reads them in large pages. */
 const DISCOVERY_PAGE_SIZE = 2000;
+
+/**
+ * Ceiling on discovery paging. The Table picker loads its whole list in one go
+ * (it is not `searchable`, so n8n filters client-side and never asks for a
+ * second page), which means the paging happens here — and design-time work has
+ * to stay bounded even if a metadata table turns out to be unexpectedly large.
+ */
+const MAX_DISCOVERY_PAGES = 10;
 
 /** Non-empty string value whose (lowercased) key matches `field`. */
 function valueForKey(row: ServicelyRecord, field: string): string | undefined {
@@ -129,13 +169,43 @@ function valueForKey(row: ServicelyRecord, field: string): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
 }
 
+/**
+ * Every row of a metadata table, paged to the end (or to MAX_DISCOVERY_PAGES).
+ * A failure on the first page propagates, so the caller can treat it as "this
+ * table/casing does not answer"; a failure once rows are in hand keeps the
+ * partial read instead, discovery being best-effort by design.
+ */
+async function allRows(ctx: ILoadOptionsFunctions, table: string, pageSize: number): Promise<ServicelyRecord[]> {
+  const rows: ServicelyRecord[] = [];
+
+  /* eslint-disable no-await-in-loop -- pagination is inherently sequential */
+  for (let page = 1; page <= MAX_DISCOVERY_PAGES; page++) {
+    let batch: ServicelyRecord[];
+    try {
+      batch = await listRecords(ctx, table, undefined, pageSize, page);
+    } catch (error) {
+      if (page === 1) {
+        throw error;
+      }
+      return rows;
+    }
+    rows.push(...batch);
+    if (batch.length < pageSize) {
+      return rows;
+    }
+  }
+  /* eslint-enable no-await-in-loop */
+
+  return rows;
+}
+
 /** Read `field` off every row of a metadata table, trying name casings, tolerating errors. */
 async function namesFrom(ctx: ILoadOptionsFunctions, table: string, field: string): Promise<string[]> {
   const pascal = table.charAt(0).toUpperCase() + table.slice(1);
   for (const name of new Set([table, pascal])) {
     try {
       // eslint-disable-next-line no-await-in-loop -- casings are tried in order until one responds
-      const rows = await listRecords(ctx, name, undefined, DISCOVERY_PAGE_SIZE);
+      const rows = await allRows(ctx, name, DISCOVERY_PAGE_SIZE);
       const names = rows.map((row) => valueForKey(row, field)).filter((value): value is string => value !== undefined);
       if (names.length > 0) {
         return names;
@@ -215,21 +285,27 @@ export async function searchTables(this: ILoadOptionsFunctions, filter?: string)
 export async function searchObjectRecords(
   this: ILoadOptionsFunctions,
   filter?: string,
+  paginationToken?: string,
 ): Promise<INodeListSearchResult> {
-  return searchRecordsInTable(this, readLocatorValue(this, 'tableName'), filter);
+  return searchRecordsInTable(this, readLocatorValue(this, 'tableName'), filter, paginationToken);
 }
 
 /** Records of the Attachment resource's `parentTable`. */
 export async function searchParentRecords(
   this: ILoadOptionsFunctions,
   filter?: string,
+  paginationToken?: string,
 ): Promise<INodeListSearchResult> {
-  return searchRecordsInTable(this, readLocatorValue(this, 'parentTable'), filter);
+  return searchRecordsInTable(this, readLocatorValue(this, 'parentTable'), filter, paginationToken);
 }
 
 /** Records of the `Attachment` table (Attachment picker). */
-export async function searchAttachments(this: ILoadOptionsFunctions, filter?: string): Promise<INodeListSearchResult> {
-  return searchRecordsInTable(this, 'Attachment', filter);
+export async function searchAttachments(
+  this: ILoadOptionsFunctions,
+  filter?: string,
+  paginationToken?: string,
+): Promise<INodeListSearchResult> {
+  return searchRecordsInTable(this, 'Attachment', filter, paginationToken);
 }
 
 /**
@@ -237,10 +313,19 @@ export async function searchAttachments(this: ILoadOptionsFunctions, filter?: st
  * `ConnectionType` is `async_integration`. The stored value is the record's
  * `ConnectionString` (the queue identifier used when dequeuing).
  */
-export async function searchQueues(this: ILoadOptionsFunctions, filter?: string): Promise<INodeListSearchResult> {
-  const records = await listRecords(this, QUEUE_TABLE, {
-    and: [{ fieldName: 'ConnectionType', operator: '=', value: ASYNC_CONNECTION_TYPE }],
-  });
+export async function searchQueues(
+  this: ILoadOptionsFunctions,
+  filter?: string,
+  paginationToken?: string,
+): Promise<INodeListSearchResult> {
+  const page = pageFrom(paginationToken);
+  const records = await listRecords(
+    this,
+    QUEUE_TABLE,
+    { and: [{ fieldName: 'ConnectionType', operator: '=', value: ASYNC_CONNECTION_TYPE }] },
+    SEARCH_PAGE_SIZE,
+    page,
+  );
 
   const results = records
     .map((record) => {
@@ -250,7 +335,7 @@ export async function searchQueues(this: ILoadOptionsFunctions, filter?: string)
     .filter((item): item is INodeListSearchItems => item !== null)
     .filter((item) => matchesFilter(item, filter));
 
-  return { results };
+  return pickerPage(results, page, records.length);
 }
 
 /**
@@ -259,7 +344,11 @@ export async function searchQueues(this: ILoadOptionsFunctions, filter?: string)
  * Actions filtered by `ProviderInstance`; the stored value is each Action's
  * `Command`.
  */
-export async function searchActions(this: ILoadOptionsFunctions, filter?: string): Promise<INodeListSearchResult> {
+export async function searchActions(
+  this: ILoadOptionsFunctions,
+  filter?: string,
+  paginationToken?: string,
+): Promise<INodeListSearchResult> {
   const queueValue = readLocatorValue(this, 'queue');
   if (!queueValue) {
     return { results: [] };
@@ -280,9 +369,14 @@ export async function searchActions(this: ILoadOptionsFunctions, filter?: string
     return { results: [] };
   }
 
-  const records = await listRecords(this, ACTION_TABLE, {
-    and: [{ fieldName: 'ProviderInstance', operator: '=', value: String(providerInstances[0].id) }],
-  });
+  const page = pageFrom(paginationToken);
+  const records = await listRecords(
+    this,
+    ACTION_TABLE,
+    { and: [{ fieldName: 'ProviderInstance', operator: '=', value: String(providerInstances[0].id) }] },
+    SEARCH_PAGE_SIZE,
+    page,
+  );
 
   const results = records
     .map((record) => {
@@ -292,7 +386,44 @@ export async function searchActions(this: ILoadOptionsFunctions, filter?: string
     .filter((item): item is INodeListSearchItems => item !== null)
     .filter((item) => matchesFilter(item, filter));
 
-  return { results };
+  return pickerPage(results, page, records.length);
+}
+
+/**
+ * Controllers registered on the instance (`SystemController`). The stored value
+ * is the controller's `Name` — the segment that goes into
+ * `POST /controller/{ControllerName}` — while the label prefers a human-readable
+ * `Label`/`Title`/`Description` when the record carries one.
+ *
+ * Entries are sorted within each page rather than across the whole table: the
+ * API is not asked to order by `Name` because that field is only assumed to
+ * exist (hence the `ClassName` fallback), and a bad sort field would fail the
+ * request outright instead of degrading.
+ */
+export async function searchControllers(
+  this: ILoadOptionsFunctions,
+  filter?: string,
+  paginationToken?: string,
+): Promise<INodeListSearchResult> {
+  const page = pageFrom(paginationToken);
+  const records = await listRecords(this, CONTROLLER_TABLE, undefined, SEARCH_PAGE_SIZE, page);
+
+  const results = records
+    .map((record) => {
+      const name = fieldString(record, 'Name') ?? fieldString(record, 'ClassName');
+      if (!name) {
+        return null;
+      }
+      const label = CONTROLLER_LABEL_FIELDS.map((field) => fieldString(record, field)).find(
+        (value) => value !== undefined,
+      );
+      return searchItem(label ?? name, name);
+    })
+    .filter((item): item is INodeListSearchItems => item !== null)
+    .filter((item) => matchesFilter(item, filter))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return pickerPage(results, page, records.length);
 }
 
 /** The `methods` block attached to both nodes. */
@@ -304,5 +435,6 @@ export const listSearchMethods = {
     searchAttachments,
     searchQueues,
     searchActions,
+    searchControllers,
   },
 };
