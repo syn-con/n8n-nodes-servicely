@@ -53,6 +53,12 @@ export default [
   ...tseslint.configs.recommended,
   { files: ['**/*.ts'], rules: productionRules },
   {
+    // n8n's convention is one flat resource/operation switch inside
+    // `execute`/`poll`, so those methods are long by design.
+    files: ['**/*.node.ts'],
+    rules: { 'max-lines-per-function': 'off', complexity: 'off' },
+  },
+  {
     files: ['**/*.test.ts', '**/*.spec.ts', 'tests/**/*.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',

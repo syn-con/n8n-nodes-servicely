@@ -1,0 +1,97 @@
+name: Publish on version change
+
+on:
+  push:
+    branches: [master] # change to `main` if that's the repo's default branch
+    paths:
+      - "package.json" # only wake up when the version file changes
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release tag
+      packages: write # publish to GitHub Packages
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: "https://npm.pkg.github.com"
+
+      - name: Read package info
+        id: pkg
+        run: |
+          echo "name=$(node -p "require('./package.json').name")" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Determine publish state
+        id: check
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NAME="${{ steps.pkg.outputs.name }}"
+          VERSION="${{ steps.pkg.outputs.version }}"
+
+          # Does the package exist at all (any version)?
+          if npm view "$NAME" version >/dev/null 2>&1; then
+            PACKAGE_EXISTS=true
+          else
+            PACKAGE_EXISTS=false
+          fi
+
+          # Does this exact version already exist?
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            VERSION_EXISTS=true
+          else
+            VERSION_EXISTS=false
+          fi
+
+          if [ "$VERSION_EXISTS" = "true" ]; then
+            echo "publish=false"     >> "$GITHUB_OUTPUT"
+            echo "release_type=none" >> "$GITHUB_OUTPUT"
+            echo "::notice::Version $VERSION already published — nothing to do."
+          elif [ "$PACKAGE_EXISTS" = "false" ]; then
+            echo "publish=true"       >> "$GITHUB_OUTPUT"
+            echo "event=package-created" >> "$GITHUB_OUTPUT"
+            echo "::notice::First publish of $NAME ($VERSION)."
+          else
+            echo "publish=true"        >> "$GITHUB_OUTPUT"
+            echo "event=package-published" >> "$GITHUB_OUTPUT"
+            echo "::notice::Update $NAME -> $VERSION."
+          fi
+
+      - name: Install
+        if: steps.check.outputs.publish == 'true'
+        run: npm ci
+
+      - name: Build
+        if: steps.check.outputs.publish == 'true'
+        run: npm run build
+
+      - name: Publish
+        if: steps.check.outputs.publish == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm publish
+
+      - name: Tag the release
+        if: steps.check.outputs.publish == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v${{ steps.pkg.outputs.version }}"
+          git push origin "v${{ steps.pkg.outputs.version }}"
+
+      - name: Notify n8n
+        if: steps.check.outputs.publish == 'true'
+        run: |
+          curl --fail --show-error --silent \
+            -X POST "https://n8n-prod.itsmcloud.lt/webhook/12ed1f70-d87f-4097-bab2-8f8d2cf007f3" \
+            -H "Authentication: ${{ secrets.N8N_PROD_AUTH }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"package\":\"${{ github.repository }}\",\"version\":\"${{ steps.pkg.outputs.version }}\",\"releaseType\":\"${{ steps.check.outputs.event }}\"}"

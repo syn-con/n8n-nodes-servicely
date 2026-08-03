@@ -1,6 +1,6 @@
 # n8n-nodes-servicely
 
-An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform. It talks to the Servicely JSON REST API (v1) so your workflows can read and write records on any table (Incident, Request, User, Group, …) and manage file attachments. A companion **Servicely Trigger** node starts workflows on a schedule by dequeuing async-queue messages or polling a table by filter.
+An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform. It talks to the Servicely JSON REST API (v1) so your workflows can read and write records on any table (Incident, Request, User, Group, …), manage file attachments, and call instance controllers directly. A companion **Servicely Trigger** node starts workflows on a schedule by dequeuing async-queue messages or polling a table by filter.
 
 [Installation](#installation) · [Credentials](#credentials) · [Operations](#operations) · [Trigger](#trigger) · [Examples](#examples) · [Compatibility](#compatibility) · [Development](#development)
 
@@ -100,6 +100,19 @@ Acknowledge a message dequeued by the [Servicely Trigger](#trigger) back to the 
 - **Reply To** — the message id, defaulting to `={{ $json._servicely.replyTo }}` (emitted by the trigger), so it auto-wires when the trigger feeds this node.
 - **Payload** — the response payload returned to Servicely (defaults to the incoming item's `{{ $json }}`).
 
+### Controller
+
+Call any controller registered on the instance directly — the escape hatch for instance-specific controllers the typed resources above do not cover.
+
+| Operation | Method | Notes |
+|-----------|--------|-------|
+| **Call** | `POST {instanceUrl}/controller/{ControllerName}` | Posts a raw JSON body. Controller endpoints sit at the instance root, not under `/v1`. |
+
+- **Controller** — **From List** shows `SystemController` records, storing each record's `Name` (the URL segment) and labelling it with `Label` / `Title` / `Description` when present; or enter a controller name / expression manually.
+- **Body (JSON)** — the request body, passed through untouched. It must be a JSON object; an expression may supply an object directly.
+
+The response is emitted as-is: an array fans out to one item per entry, an object becomes one item, a scalar is wrapped as `{ data: ... }`, and an empty response yields `{ success: true }`.
+
 > **Note on upload:** attachment upload is implemented as a direct `POST /v1/Attachment` with a base64 `Data` field. This path is not explicitly documented for inbound REST — validate it against your instance. If your instance rejects it, front the upload with a small custom controller accepting `{ mimeType, fileName, base64String, parentRecord, relatedField }`. Field names and the ParentRecord format are confirmed by the docs.
 
 ## Trigger
@@ -171,18 +184,56 @@ npm test            # vitest run
 npm run test:coverage
 ```
 
-Tests use dependency injection (a stub `HttpRequestFn` / mock `IServicelyClient`) rather than a live instance, so the suite runs offline. Coverage is enforced at ≥80% per file (statements, branches, functions, lines).
+Tests stub `helpers.httpRequestWithAuthentication` rather than hitting a live instance, so the suite runs offline. Coverage is enforced at ≥80% per file (statements, branches, functions, lines).
 
 ### Architecture
 
-- `nodes/Servicely/transport/` — framework-agnostic `ApiClient` (retry, rate limiting, error mapping), `AuthProvider` (Basic/Bearer/HMAC strategies), `RateLimiter` (token bucket).
-- `nodes/Servicely/handlers/` — per-resource operation routing (`object`, `attachment`) depending on the narrow `IServicelyClient` interface.
-- `nodes/Servicely/descriptions/` — n8n property trees (declarative UI).
-- `nodes/Servicely/Servicely.node.ts` — the action node: decrypts credentials, builds the client, routes to a handler.
-- `nodes/Servicely/ServicelyTrigger.node.ts` — the polling trigger; `handlers/queue.handler.ts` (dequeue) and `handlers/polling.handler.ts` (poll table by filter) back its two modes.
-- `nodes/Servicely/query.ts` — pure filter/query builders shared by Get Many and the trigger's Object mode.
-- `credentials/ServicelyApi.credentials.ts` — the credential type (auth fields, test request).
-- Endpoints, operators, and header names live only in `nodes/Servicely/constants.ts`.
+The layout follows n8n's `actions/` router convention: one folder per resource,
+one file per operation.
+
+```
+nodes/Servicely/
+  Servicely.node.ts            # thin shell: description + router
+  ServicelyTrigger.node.ts     # polling trigger (no resource/operation pair)
+  actions/
+    router.ts                  # resolves the operation, owns the item loop
+    versionDescription.ts      # INodeTypeDescription, composed from the resources
+    node.type.ts               # resource → operations union the router narrows on
+    common.descriptions.ts     # property fragments used by more than one operation
+    object/
+      index.ts                 # operation selector + shared Table field
+      create.operation.ts      # each file: its own properties + execute(index)
+      delete.operation.ts
+      get.operation.ts
+      getAll.operation.ts
+      update.operation.ts
+    attachment/
+      index.ts
+      download.operation.ts
+      list.operation.ts
+      upload.operation.ts
+    queue/
+      index.ts
+      reply.ts                 # the call both reply operations share
+      replyFailure.operation.ts
+      replySuccess.operation.ts
+    controller/
+      index.ts
+      call.operation.ts        # raw POST to /controller/{ControllerName}
+  GenericFunctions.ts          # API request helpers + query builders
+  SearchFunctions.ts           # methods.listSearch pickers + table discovery
+  constants.ts
+  types.ts
+```
+
+- Each `*.operation.ts` exports `description` (its properties, scoped with `updateDisplayOptions`) and `execute(this, index)` handling **one** item.
+- `router.ts` owns the item loop, `continueOnFail`, and error wrapping, so operations carry no boilerplate.
+- `node.type.ts` makes the resource/operation pairing a compile-time union — an unregistered operation fails to build rather than at runtime.
+- `credentials/ServicelyApi.credentials.ts` — its `authenticate` resolves the instance URL into `baseURL` and signs every request (Basic / Bearer / HMAC), so no node code reads credentials.
+- `SearchFunctions.ts` — every **From List** picker is paginated. Servicely's list endpoints are offset-based, so each picker page returns n8n's `paginationToken` (the next page number) whenever the API filled the page; n8n asks for the next one as the user scrolls. Because the API has no text-search parameter, the typed filter is applied per page — a page emptied by filtering still hands back its token, so matches further in the table are not stranded. The **Table** picker is the exception: it is not `searchable`, so n8n loads it in one go and the paging happens internally (bounded, since it runs at design time).
+
+Adding an operation means: add `<name>.operation.ts`, register it in the
+resource's `index.ts` (export + selector option), and add it to `node.type.ts`.
 
 ## Resources
 
