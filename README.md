@@ -171,18 +171,52 @@ npm test            # vitest run
 npm run test:coverage
 ```
 
-Tests use dependency injection (a stub `HttpRequestFn` / mock `IServicelyClient`) rather than a live instance, so the suite runs offline. Coverage is enforced at ≥80% per file (statements, branches, functions, lines).
+Tests stub `helpers.httpRequestWithAuthentication` rather than hitting a live instance, so the suite runs offline. Coverage is enforced at ≥80% per file (statements, branches, functions, lines).
 
 ### Architecture
 
-- `nodes/Servicely/transport/` — framework-agnostic `ApiClient` (retry, rate limiting, error mapping), `AuthProvider` (Basic/Bearer/HMAC strategies), `RateLimiter` (token bucket).
-- `nodes/Servicely/handlers/` — per-resource operation routing (`object`, `attachment`) depending on the narrow `IServicelyClient` interface.
-- `nodes/Servicely/descriptions/` — n8n property trees (declarative UI).
-- `nodes/Servicely/Servicely.node.ts` — the action node: decrypts credentials, builds the client, routes to a handler.
-- `nodes/Servicely/ServicelyTrigger.node.ts` — the polling trigger; `handlers/queue.handler.ts` (dequeue) and `handlers/polling.handler.ts` (poll table by filter) back its two modes.
-- `nodes/Servicely/query.ts` — pure filter/query builders shared by Get Many and the trigger's Object mode.
-- `credentials/ServicelyApi.credentials.ts` — the credential type (auth fields, test request).
-- Endpoints, operators, and header names live only in `nodes/Servicely/constants.ts`.
+The layout follows n8n's `actions/` router convention: one folder per resource,
+one file per operation.
+
+```
+nodes/Servicely/
+  Servicely.node.ts            # thin shell: description + router
+  ServicelyTrigger.node.ts     # polling trigger (no resource/operation pair)
+  actions/
+    router.ts                  # resolves the operation, owns the item loop
+    versionDescription.ts      # INodeTypeDescription, composed from the resources
+    node.type.ts               # resource → operations union the router narrows on
+    common.descriptions.ts     # property fragments used by more than one operation
+    object/
+      index.ts                 # operation selector + shared Table field
+      create.operation.ts      # each file: its own properties + execute(index)
+      delete.operation.ts
+      get.operation.ts
+      getAll.operation.ts
+      update.operation.ts
+    attachment/
+      index.ts
+      download.operation.ts
+      list.operation.ts
+      upload.operation.ts
+    queue/
+      index.ts
+      reply.ts                 # the call both reply operations share
+      replyFailure.operation.ts
+      replySuccess.operation.ts
+  GenericFunctions.ts          # API request helpers + query builders
+  SearchFunctions.ts           # methods.listSearch pickers + table discovery
+  constants.ts
+  types.ts
+```
+
+- Each `*.operation.ts` exports `description` (its properties, scoped with `updateDisplayOptions`) and `execute(this, index)` handling **one** item.
+- `router.ts` owns the item loop, `continueOnFail`, and error wrapping, so operations carry no boilerplate.
+- `node.type.ts` makes the resource/operation pairing a compile-time union — an unregistered operation fails to build rather than at runtime.
+- `credentials/ServicelyApi.credentials.ts` — its `authenticate` resolves the instance URL into `baseURL` and signs every request (Basic / Bearer / HMAC), so no node code reads credentials.
+
+Adding an operation means: add `<name>.operation.ts`, register it in the
+resource's `index.ts` (export + selector option), and add it to `node.type.ts`.
 
 ## Resources
 

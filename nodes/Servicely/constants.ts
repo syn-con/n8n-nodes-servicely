@@ -1,15 +1,12 @@
-/**
- * Single source of truth for API-level string literals (DRY).
- * No endpoint path, operator, or header name should be hard-coded elsewhere.
- */
+/** API-level literals shared by the nodes and their property descriptions. */
 
 import type { QueryOperator } from './types';
 
-/** API version segment of every request path. */
-export const API_VERSION = 'v1';
-
-/** API default page size for list endpoints. */
+/** Page size used when paging through all results (matches the API default). */
 export const DEFAULT_PAGE_SIZE = 200;
+
+/** Async Integration queue controller (dequeue/reply). Not versioned under /v1. */
+export const ASYNC_INTEGRATION_PATH = '/controller/AsyncIntegration';
 
 /** Identifier sent as the `identifier` field on Async Integration queue calls. */
 export const QUEUE_IDENTIFIER = 'n8n';
@@ -17,10 +14,10 @@ export const QUEUE_IDENTIFIER = 'n8n';
 /** Default number of messages to claim per dequeue poll. */
 export const DEFAULT_DEQUEUE_COUNT = 10;
 
-/** Default request timeout in milliseconds (overridable via node options). */
+/** Default request timeout in milliseconds (overridable via Request Options). */
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
-/** Default max retry attempts for 429/5xx/network failures (overridable via node options). */
+/** Default max retry attempts for 429/5xx/network failures (overridable via Request Options). */
 export const DEFAULT_MAX_RETRIES = 3;
 
 /** Backoff bounds for retried requests (exponential + jitter). */
@@ -28,24 +25,12 @@ export const RETRY_BASE_DELAY_MS = 500;
 export const RETRY_MAX_DELAY_MS = 8_000;
 
 /**
- * Soft self-throttle budget for the token-bucket RateLimiter. Servicely does not
- * publish a documented cost budget/window, so these are conservative defaults
- * sized off the observed `X-Rate-Limit-Cost` example (~11 per 200-record page);
- * the limiter self-corrects from real `X-Rate-Limit-Cost` values as they arrive.
+ * UI value for the Equals operator. n8n treats any options value starting with
+ * `=` as an expression, so `=` cannot itself be an options value — the dropdown
+ * would render it as an empty expression and never stay selected. The Operator
+ * dropdown stores `eq`, which the query builder translates back to `=`.
  */
-export const DEFAULT_RATE_LIMIT_CAPACITY = 200;
-export const DEFAULT_RATE_LIMIT_REFILL_PER_SECOND = 20;
-
-/** Path builders for the REST surface. All paths are relative to the instance URL. */
-export const ENDPOINTS = {
-  table: (table: string): string => `/${API_VERSION}/${table}`,
-  record: (table: string, id: string): string => `/${API_VERSION}/${table}/${id}`,
-  batch: `/${API_VERSION}/_batch`,
-  attachment: (id: string): string => `/${API_VERSION}/Attachment/${id}`,
-  attachmentList: `/${API_VERSION}/Attachment`,
-  /** Async Integration queue controller (dequeue/ack). Not versioned under /v1. */
-  asyncIntegration: '/controller/AsyncIntegration',
-} as const;
+export const EQUALS_UI_VALUE = 'eq';
 
 /** Supported query operators (verified against the GET Request docs). */
 export const QUERY_OPERATORS: readonly QueryOperator[] = [
@@ -64,23 +49,3 @@ export const QUERY_OPERATORS: readonly QueryOperator[] = [
   '>=',
   'between',
 ] as const;
-
-/** Supported boolean conjunctions for complex queries. */
-export const CONJUNCTIONS = ['and', 'or', 'nor'] as const;
-
-/** Response header names returned by list endpoints. */
-export const RESPONSE_HEADERS = {
-  page: 'x-page',
-  pageSize: 'x-page-size',
-  resultCount: 'x-result-count',
-  resultMore: 'x-result-more',
-  totalResultCount: 'x-total-result-count',
-  rateLimitCost: 'x-rate-limit-cost',
-} as const;
-
-/** Minimum Servicely versions for optional features (for README/runtime notes). */
-export const MIN_VERSIONS = {
-  batch: '1.4.2-release.40',
-  bearerUrlParam: '1.10',
-  moveAttachments: '1.10',
-} as const;
