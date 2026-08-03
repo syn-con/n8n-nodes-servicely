@@ -311,6 +311,41 @@ describe('queue resource', () => {
   });
 });
 
+/**
+ * n8n stores only the parameters that differ from their declared default, so the
+ * router has to survive a saved node that names neither selector. Controller is
+ * the sharp case: its Operation has a single option, so n8n never stores it and
+ * every Call would otherwise die on `Could not get parameter "operation"`.
+ */
+describe('selectors left at their defaults', () => {
+  it('falls back to the default operation when the saved node omits it', async () => {
+    const http = makeHttpStub([ok({ result: 'done' })]);
+    const items = await run({
+      http,
+      params: { resource: 'controller', controllerName: 'MyController', body: '{}' },
+    });
+
+    expect(http.calls[0].options.url).toBe('/controller/MyController');
+    expect(items).toEqual([{ json: { result: 'done' }, pairedItem: { item: 0 } }]);
+  });
+
+  it('falls back to both defaults when the saved node omits the resource too', async () => {
+    const http = makeHttpStub([ok([{ id: 'r1' }])]);
+    const items = await run({ http, params: { tableName: 'Incident' } });
+
+    // The description defaults are object + getAll.
+    expect(http.calls[0].options.method).toBe('GET');
+    expect(http.calls[0].options.url).toBe('/v1/Incident');
+    expect(items[0].json).toEqual({ id: 'r1' });
+  });
+
+  it('still names both halves of an unsupported pair', async () => {
+    await expect(run({ params: { resource: 'controller', operation: 'frobnicate' } })).rejects.toThrow(
+      /The operation "frobnicate" is not supported for resource "controller"/,
+    );
+  });
+});
+
 describe('controller resource', () => {
   it('posts the raw JSON body to the selected controller', async () => {
     const http = makeHttpStub([ok({ result: 'done' })]);
