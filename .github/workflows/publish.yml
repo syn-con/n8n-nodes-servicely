@@ -2,9 +2,12 @@ name: Publish on version change
 
 on:
   push:
-    branches: [main] # change to `main` if that's the repo's default branch
+    branches: [main]
     paths:
       - "package.json" # only wake up when the version file changes
+  # Lets a publish be retried without a version bump — the job is already
+  # idempotent (it no-ops when the version is on the registry).
+  workflow_dispatch:
 
 jobs:
   publish:
@@ -19,7 +22,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 22+ is required to install: n8n-workflow pulls in isolated-vm 6.x,
+          # a native module that compiles against V8 12.4+ APIs (Node 22 and up).
+          node-version: 22
           cache: npm
           registry-url: "https://npm.pkg.github.com"
 
