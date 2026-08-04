@@ -23,7 +23,7 @@ const SEARCH_PAGE_SIZE = 100;
 const LABEL_FIELDS = ['Number', 'Name', 'Title', 'ShortDescription', 'FileName', 'DisplayName', 'Email', 'Label'];
 
 /** Fields tried, in order, for a controller's display label (its Name is the fallback). */
-const CONTROLLER_LABEL_FIELDS = ['Label', 'Title', 'Description'];
+const CONTROLLER_LABEL_FIELDS = ['Name'];
 
 /** Async Integration lookups: the provider table, action table, and connection-type filter. */
 const QUEUE_TABLE = 'ActionProviderInstance';
@@ -407,7 +407,6 @@ export async function searchControllers(
 ): Promise<INodeListSearchResult> {
   const page = pageFrom(paginationToken);
   const records = await listRecords(this, CONTROLLER_TABLE, undefined, SEARCH_PAGE_SIZE, page);
-
   const results = records
     .map((record) => {
       const name = fieldString(record, 'Name') ?? fieldString(record, 'ClassName');
