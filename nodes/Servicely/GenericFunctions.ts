@@ -4,6 +4,7 @@ import {
   type IHttpRequestMethods,
   type IHttpRequestOptions,
   type ILoadOptionsFunctions,
+  type INodeExecutionData,
   type IPollFunctions,
   type JsonObject,
   NodeApiError,
@@ -268,6 +269,31 @@ export async function servicelyApiRequest(
  */
 export function toRecordList<T>(payload: unknown): T[] {
   return Array.isArray(payload) ? (payload as T[]) : [];
+}
+
+/**
+ * Output items for a controller response, which is free-form: a controller may
+ * answer with a record, a list, a scalar, or nothing at all. A list fans out to
+ * one item per entry (the usual n8n shape); anything that is not an object is
+ * wrapped so downstream nodes still see JSON. Shared by Controller → Call and
+ * the Global Search operations, which post to controllers rather than to `/v1`.
+ */
+export function toItems(payload: unknown, index: number): INodeExecutionData[] {
+  const pairedItem = { item: index };
+
+  if (Array.isArray(payload)) {
+    return payload.map((entry) => ({
+      json: (entry !== null && typeof entry === 'object' ? entry : { data: entry }) as IDataObject,
+      pairedItem,
+    }));
+  }
+  if (payload === null || payload === undefined || payload === '') {
+    return [{ json: { success: true }, pairedItem }];
+  }
+  if (typeof payload !== 'object') {
+    return [{ json: { data: payload }, pairedItem }];
+  }
+  return [{ json: payload as IDataObject, pairedItem }];
 }
 
 /**

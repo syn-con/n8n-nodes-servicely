@@ -3,6 +3,7 @@ import { type INodeTypeDescription, NodeConnectionTypes } from 'n8n-workflow';
 import * as attachment from './attachment';
 import { requestOptionsProperty } from './common.descriptions';
 import * as controller from './controller';
+import * as globalSearch from './globalSearch';
 import * as object from './object';
 import * as queue from './queue';
 
@@ -33,6 +34,7 @@ export const versionDescription: INodeTypeDescription = {
       options: [
         { name: 'Object', value: 'object' },
         { name: 'Attachment', value: 'attachment' },
+        { name: 'Global Search', value: 'globalSearch' },
         { name: 'Queue', value: 'queue' },
         { name: 'Controller', value: 'controller' },
       ],
@@ -40,6 +42,7 @@ export const versionDescription: INodeTypeDescription = {
     },
     ...object.description,
     ...attachment.description,
+    ...globalSearch.description,
     ...queue.description,
     ...controller.description,
     requestOptionsProperty,

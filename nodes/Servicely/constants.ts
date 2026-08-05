@@ -14,6 +14,23 @@ export const ASYNC_INTEGRATION_PATH = `${CONTROLLER_PATH_PREFIX}/AsyncIntegratio
 /** Table listing the instance's controllers (backs the Controller picker). */
 export const CONTROLLER_TABLE = 'SystemController';
 
+/** Global Search controller (searchable-table config + the searches themselves). */
+export const GLOBAL_SEARCH_PATH = `${CONTROLLER_PATH_PREFIX}/GlobalSearch`;
+
+/**
+ * `request_type` values the Global Search controller discriminates on: its own
+ * configuration (one entry per searchable table, which is what the Table picker
+ * lists), a search, and a capped batch search.
+ */
+export const GLOBAL_SEARCH_REQUESTS = {
+  config: 'search_config',
+  search: 'search',
+  batch: 'batch_search',
+} as const;
+
+/** One of the `request_type` values above. */
+export type GlobalSearchRequestType = (typeof GLOBAL_SEARCH_REQUESTS)[keyof typeof GLOBAL_SEARCH_REQUESTS];
+
 /** Identifier sent as the `identifier` field on Async Integration queue calls. */
 export const QUEUE_IDENTIFIER = 'n8n';
 

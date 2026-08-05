@@ -2,6 +2,7 @@ import { type IExecuteFunctions, type INodeExecutionData, NodeError, NodeOperati
 
 import * as attachment from './attachment';
 import * as controller from './controller';
+import * as globalSearch from './globalSearch';
 import type { Servicely } from './node.type';
 import * as object from './object';
 import * as queue from './queue';
@@ -27,6 +28,8 @@ function actionFor(servicely: Servicely): Action | undefined {
       return queue[servicely.operation];
     case 'controller':
       return controller[servicely.operation];
+    case 'globalSearch':
+      return globalSearch[servicely.operation];
     default:
       return undefined;
   }

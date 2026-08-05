@@ -6,7 +6,7 @@ import type {
   INodePropertyOptions,
 } from 'n8n-workflow';
 
-import { CONTROLLER_TABLE } from './constants';
+import { CONTROLLER_TABLE, GLOBAL_SEARCH_PATH, GLOBAL_SEARCH_REQUESTS } from './constants';
 import { servicelyApiRequest, toRecordList } from './GenericFunctions';
 import type { ServicelyRecord } from './types';
 
@@ -32,6 +32,9 @@ const LABEL_FIELDS = ['Number', 'Name', 'Title', 'ShortDescription', 'FileName',
 
 /** Fields tried, in order, for a controller's display label (its Name is the fallback). */
 const CONTROLLER_LABEL_FIELDS = ['Name'];
+
+/** Field of a Global Search config entry holding the searchable table's class name. */
+const GLOBAL_SEARCH_TABLE_FIELD = 'table';
 
 /** Async Integration lookups: the provider table, action table, and connection-type filter. */
 const QUEUE_TABLE = 'ActionProviderInstance';
@@ -303,6 +306,45 @@ export async function searchAttachments(
 }
 
 /**
+ * Tables the Global Search controller is configured to search. This is the one
+ * picker that is not a table read: the controller answers its own configuration
+ * when posted `{"request_type": "search_config"}`, one entry per searchable table
+ * as `{ id, table }`. Only `table` is used — as both the label and the stored
+ * value, because that is the `table_class` the search operations send back, and
+ * the entry's own `id` means nothing to them.
+ *
+ * The configuration arrives in a single response, so this filters client-side and
+ * never pages. An instance without the controller fails the request, which the
+ * picker surfaces as an error rather than an empty list — the locator's "By Name"
+ * mode is the way past it.
+ */
+export async function searchGlobalSearchTables(
+  this: ILoadOptionsFunctions,
+  filter?: string,
+): Promise<INodeListSearchResult> {
+  const entries = toRecordList<ServicelyRecord>(
+    await servicelyApiRequest.call(this, 'POST', GLOBAL_SEARCH_PATH, {
+      request_type: GLOBAL_SEARCH_REQUESTS.config,
+    }),
+  );
+
+  const byTable = new Map<string, INodeListSearchItems>();
+  for (const entry of entries) {
+    const table = fieldString(entry, GLOBAL_SEARCH_TABLE_FIELD)?.trim();
+    if (table === undefined || byTable.has(table)) {
+      continue;
+    }
+    byTable.set(table, searchItem(table, table));
+  }
+
+  return {
+    results: [...byTable.values()]
+      .filter((item) => matchesFilter(item, filter))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  };
+}
+
+/**
  * Async-integration queues, i.e. `ActionProviderInstance` records whose
  * `ConnectionType` is `async_integration`. The stored value is the record's
  * `ConnectionString` (the queue identifier used when dequeuing).
@@ -457,6 +499,7 @@ export const listSearchMethods = {
     searchFields,
     searchParentRecords,
     searchAttachments,
+    searchGlobalSearchTables,
     searchQueues,
     searchActions,
     searchControllers,

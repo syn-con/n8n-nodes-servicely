@@ -8,7 +8,7 @@ import {
 } from 'n8n-workflow';
 
 import { CONTROLLER_PATH_PREFIX } from '../../constants';
-import { locator, servicelyApiRequest } from '../../GenericFunctions';
+import { locator, servicelyApiRequest, toItems } from '../../GenericFunctions';
 import { searchResourceLocator } from '../common.descriptions';
 
 const properties: INodeProperties[] = [
@@ -60,29 +60,6 @@ function requestBody(ctx: IExecuteFunctions, index: number): IDataObject {
     throw new NodeOperationError(ctx.getNode(), 'Body must be a JSON object', { itemIndex: index });
   }
   return parsed as IDataObject;
-}
-
-/**
- * A controller is free-form: it may answer with a record, a list, a scalar, or
- * nothing at all. A list fans out to one item per entry (the usual n8n shape);
- * anything that is not an object is wrapped so downstream nodes still see JSON.
- */
-function toItems(payload: unknown, index: number): INodeExecutionData[] {
-  const pairedItem = { item: index };
-
-  if (Array.isArray(payload)) {
-    return payload.map((entry) => ({
-      json: (entry !== null && typeof entry === 'object' ? entry : { data: entry }) as IDataObject,
-      pairedItem,
-    }));
-  }
-  if (payload === null || payload === undefined || payload === '') {
-    return [{ json: { success: true }, pairedItem }];
-  }
-  if (typeof payload !== 'object') {
-    return [{ json: { data: payload }, pairedItem }];
-  }
-  return [{ json: payload as IDataObject, pairedItem }];
 }
 
 export async function execute(this: IExecuteFunctions, index: number): Promise<INodeExecutionData[]> {

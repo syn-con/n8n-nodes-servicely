@@ -1,6 +1,6 @@
 # n8n-nodes-servicely
 
-An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform. It talks to the Servicely JSON REST API (v1) so your workflows can read and write records on any table (Incident, Request, User, Group, …), manage file attachments, and call instance controllers directly. A companion **Servicely Trigger** node starts workflows on a schedule by dequeuing async-queue messages or polling a table by filter.
+An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform. It talks to the Servicely JSON REST API (v1) so your workflows can read and write records on any table (Incident, Request, User, Group, …), manage file attachments, run a full-text Global Search, and call instance controllers directly. A companion **Servicely Trigger** node starts workflows on a schedule by dequeuing async-queue messages or polling a table by filter.
 
 [Installation](#installation) · [Credentials](#credentials) · [Operations](#operations) · [Trigger](#trigger) · [Examples](#examples) · [Compatibility](#compatibility) · [Development](#development)
 
@@ -95,6 +95,20 @@ The field entries are dropdowns loaded from the selected table's `FieldDefinitio
 | **List** | Lists the attachments on a parent record (filterable by related field). |
 
 `Parent Record` uses Servicely's `{recordId}:{tableName}` format (e.g. `abc123:Incident`), built for you from the **Parent Table** + **Parent Record ID** fields.
+
+### Global Search
+
+Full-text search over one table through the instance's Global Search controller (`POST {instanceUrl}/controller/GlobalSearch`) rather than through a `/v1` query.
+
+| Operation | Body | Notes |
+|-----------|------|-------|
+| **Search** | `{ request_type: "search", table_class, text }` | Search one table for the given text. |
+| **Batch Search** | `{ request_type: "batch_search", table_class, text, limit }` | Same request, capped at **Limit** (default 50). |
+
+- **Table** — **From List** posts `{"request_type": "search_config"}` to the same controller and lists the tables it is configured to search, taking each entry's `table` as both label and value (its `id` is not used). That value is sent as `table_class`. Or switch to **By Name** for a table class / expression.
+- **Search Text** — the text to match.
+
+The response is emitted like any other controller answer: a list of hits fans out to one item per hit, an object becomes one item, a scalar is wrapped as `{ data: ... }`, and an empty response yields `{ success: true }`.
 
 ### Queue
 
@@ -220,6 +234,11 @@ nodes/Servicely/
       download.operation.ts
       list.operation.ts
       upload.operation.ts
+    globalSearch/
+      index.ts
+      request.ts               # the Table + Search Text pair and the POST both share
+      search.operation.ts
+      batchSearch.operation.ts
     queue/
       index.ts
       reply.ts                 # the call both reply operations share

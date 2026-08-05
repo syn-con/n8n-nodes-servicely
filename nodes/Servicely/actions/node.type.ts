@@ -6,6 +6,7 @@ type ServicelyMap = {
   attachment: 'download' | 'list' | 'upload';
   queue: 'replyFailure' | 'replySuccess';
   controller: 'call';
+  globalSearch: 'batchSearch' | 'search';
 };
 
 /**

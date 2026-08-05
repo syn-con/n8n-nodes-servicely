@@ -21,6 +21,7 @@ describe('node description', () => {
     expect(resource?.options?.map((option) => 'value' in option && option.value)).toEqual([
       'object',
       'attachment',
+      'globalSearch',
       'queue',
       'controller',
     ]);
@@ -501,6 +502,67 @@ describe('controller resource', () => {
   it('rejects an unknown operation', async () => {
     await expect(run({ params: { resource: 'controller', operation: 'invoke' } })).rejects.toThrow(
       /The operation "invoke" is not supported for resource "controller"/,
+    );
+  });
+});
+
+describe('global search resource', () => {
+  it('posts the selected table and the search text to the Global Search controller', async () => {
+    const http = makeHttpStub([ok([{ id: 'r1', Number: 'INC001' }])]);
+    const items = await run({
+      http,
+      params: { resource: 'globalSearch', operation: 'search', tableClass: 'Incident', text: '  printer  ' },
+    });
+
+    expect(http.calls[0].options.method).toBe('POST');
+    expect(http.calls[0].options.url).toBe('/controller/GlobalSearch');
+    expect(http.calls[0].options.body).toEqual({
+      request_type: 'search',
+      table_class: 'Incident',
+      text: 'printer',
+    });
+    expect(items).toEqual([{ json: { id: 'r1', Number: 'INC001' }, pairedItem: { item: 0 } }]);
+  });
+
+  it('adds the limit on a batch search', async () => {
+    const http = makeHttpStub([ok([])]);
+    await run({
+      http,
+      params: {
+        resource: 'globalSearch',
+        operation: 'batchSearch',
+        tableClass: 'Incident',
+        text: 'printer',
+        limit: 10,
+      },
+    });
+
+    expect(http.calls[0].options.body).toEqual({
+      request_type: 'batch_search',
+      table_class: 'Incident',
+      text: 'printer',
+      limit: 10,
+    });
+  });
+
+  it('batches at the declared default when the Limit field is untouched', async () => {
+    const http = makeHttpStub([ok([])]);
+    await run({
+      http,
+      params: { resource: 'globalSearch', operation: 'batchSearch', tableClass: 'Incident', text: 'printer' },
+    });
+
+    expect(http.calls[0].options.body).toEqual({
+      request_type: 'batch_search',
+      table_class: 'Incident',
+      text: 'printer',
+      limit: 50,
+    });
+  });
+
+  it('rejects an unknown operation', async () => {
+    await expect(run({ params: { resource: 'globalSearch', operation: 'lookup' } })).rejects.toThrow(
+      /The operation "lookup" is not supported for resource "globalSearch"/,
     );
   });
 });

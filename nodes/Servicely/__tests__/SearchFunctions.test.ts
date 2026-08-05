@@ -10,6 +10,7 @@ import {
   searchAttachments,
   searchControllers,
   searchFields,
+  searchGlobalSearchTables,
   searchParentRecords,
   searchQueues,
   searchTables,
@@ -52,6 +53,7 @@ describe('listSearchMethods', () => {
       'searchAttachments',
       'searchControllers',
       'searchFields',
+      'searchGlobalSearchTables',
       'searchParentRecords',
       'searchQueues',
       'searchTables',
@@ -322,6 +324,47 @@ describe('record pickers', () => {
 
     expect(http.calls[0].options.url).toBe('/v1/Attachment');
     expect(result.results).toEqual([{ name: 'x.png', value: 'a1' }]);
+  });
+});
+
+describe('searchGlobalSearchTables', () => {
+  it("asks the controller for its config and offers each entry's table", async () => {
+    const { ctx, http } = ctxFor([
+      ok([
+        { id: '1', table: 'Incident' },
+        { id: '2', table: 'Asset' },
+        { id: '3', table: 'Incident' },
+        { id: '4' },
+      ]),
+    ]);
+
+    const result = await searchGlobalSearchTables.call(ctx as ILoadOptionsFunctions);
+
+    expect(http.calls[0].options.method).toBe('POST');
+    expect(http.calls[0].options.url).toBe('/controller/GlobalSearch');
+    expect(http.calls[0].options.body).toEqual({ request_type: 'search_config' });
+    // Deduped, sorted, entries without a table skipped, and the id never stored.
+    expect(result.results).toEqual([
+      { name: 'Asset', value: 'Asset' },
+      { name: 'Incident', value: 'Incident' },
+    ]);
+    // The whole config arrives in one response, so there is nothing to page.
+    expect(result.paginationToken).toBeUndefined();
+    expect(http.count()).toBe(1);
+  });
+
+  it('filters the configured tables client-side', async () => {
+    const { ctx } = ctxFor([ok([{ id: '1', table: 'Incident' }, { id: '2', table: 'Asset' }])]);
+
+    await expect(searchGlobalSearchTables.call(ctx as ILoadOptionsFunctions, 'inc')).resolves.toEqual({
+      results: [{ name: 'Incident', value: 'Incident' }],
+    });
+  });
+
+  it('surfaces a controller that does not answer', async () => {
+    const { ctx } = ctxFor([{ status: 404, body: {} }]);
+
+    await expect(searchGlobalSearchTables.call(ctx as ILoadOptionsFunctions)).rejects.toThrow();
   });
 });
 
