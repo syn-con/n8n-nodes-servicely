@@ -37,8 +37,8 @@ export function tableResourceLocator(config: TableLocatorConfig): INodePropertie
     description: config.description,
     modes: [
       {
-        // Discovery unions several metadata queries, so load once and let n8n
-        // filter the returned list client-side rather than re-query per keystroke.
+        // The registry is one small table, so load it once and let n8n filter
+        // the returned list client-side rather than re-query per keystroke.
         displayName: 'From List',
         name: 'list',
         type: 'list',
@@ -128,6 +128,30 @@ export function searchResourceLocator(config: SearchLocatorConfig): INodePropert
 }
 
 // ---------------------------------------------------------------------------
+// Field references
+// ---------------------------------------------------------------------------
+
+/**
+ * A Field reference: the fields of the selected `tableName`, loaded from the
+ * instance's `FieldDefinition` registry.
+ *
+ * This is an `options` dropdown rather than a resourceLocator because it is used
+ * inside fixedCollection rows, whose stored value is a bare field-name string —
+ * a locator's `{mode, value}` object would change the saved shape and break
+ * existing workflows. Callers override `name` and `description`; anything not in
+ * the list (a dot-walked relation, a field on a table typed by expression) stays
+ * enterable by switching the input to an expression.
+ */
+const fieldNameProperty: INodeProperties = {
+  displayName: 'Field Name',
+  name: 'fieldName',
+  type: 'options',
+  typeOptions: { loadOptionsMethod: 'getFields', loadOptionsDependsOn: ['tableName'] },
+  default: '',
+  description: 'Field of the selected table',
+};
+
+// ---------------------------------------------------------------------------
 // Filters
 // ---------------------------------------------------------------------------
 
@@ -177,12 +201,9 @@ export const filtersProperty: INodeProperties = {
       displayName: 'Condition',
       values: [
         {
-          displayName: 'Field Name',
+          ...fieldNameProperty,
           name: 'fieldName',
-          type: 'string',
-          default: '',
-          placeholder: 'State',
-          description: 'Field to filter on. Dot-walk relations are allowed (e.g. Requestor.Email).',
+          description: 'Field to filter on, loaded from the selected table. To dot-walk a relation (e.g. Requestor.Email), switch this input to an expression.',
         },
         {
           displayName: 'Operator',
@@ -247,12 +268,9 @@ export const fieldsToSetProperty: INodeProperties = {
       displayName: 'Field',
       values: [
         {
-          displayName: 'Field Name',
+          ...fieldNameProperty,
           name: 'name',
-          type: 'string',
-          default: '',
-          placeholder: 'ShortDescription',
-          description: 'Name of the Servicely field',
+          description: 'Field to write, loaded from the selected table',
         },
         {
           displayName: 'Value',

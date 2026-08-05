@@ -1,13 +1,23 @@
-import type { IDataObject, ILoadOptionsFunctions, INodeListSearchItems, INodeListSearchResult } from 'n8n-workflow';
+import type {
+  IDataObject,
+  ILoadOptionsFunctions,
+  INodeListSearchItems,
+  INodeListSearchResult,
+  INodePropertyOptions,
+} from 'n8n-workflow';
 
 import { CONTROLLER_TABLE } from './constants';
 import { servicelyApiRequest, toRecordList } from './GenericFunctions';
-import type { BatchRequest, BatchResponse, ServicelyRecord } from './types';
+import type { ServicelyRecord } from './types';
 
 /**
- * `methods.listSearch` implementations backing the "From List" mode of every
- * resourceLocator: the Table and Record pickers on the Servicely node, and the
- * Queue / Action Name pickers on the trigger.
+ * The nodes' dynamic parameter loaders.
+ *
+ * `methods.listSearch` backs the "From List" mode of every resourceLocator: the
+ * Table and Record pickers on the Servicely node, and the Queue / Action Name
+ * pickers on the trigger. `methods.loadOptions` backs the Field dropdowns nested
+ * inside fixedCollections, where a resourceLocator's `{mode, value}` shape would
+ * not fit the plain strings those rows store.
  *
  * Every searchable picker is paginated: n8n calls the method with the
  * `paginationToken` from the previous result once the user scrolls past the
@@ -97,9 +107,13 @@ function recordLabel(record: ServicelyRecord): string {
   return String(record.id);
 }
 
-/** `Label (value)`, collapsing to just the value when there is no distinct label. */
+/**
+ * A picker entry showing the label alone — never the stored id. n8n already
+ * renders the selected value under the locator, so repeating it as `Label (id)`
+ * only made long lists harder to scan.
+ */
 function searchItem(label: string, value: string): INodeListSearchItems {
-  return { name: label === value ? value : `${label} (${value})`, value };
+  return { name: label, value };
 }
 
 /**
@@ -126,63 +140,60 @@ async function searchRecordsInTable(
 }
 
 // ---------------------------------------------------------------------------
-// Table discovery
+// Schema registries (tables and their fields)
 // ---------------------------------------------------------------------------
 
 /**
- * Servicely's REST API exposes no master table-registry endpoint (no Swagger,
- * and generic "metadata"/"entity" probes return unrelated rows — e.g. `Entity`
- * is a named-pattern store). Instead, table names are gathered at runtime from
- * documented metadata tables whose rows reference real leaf tables, verified
- * against a live instance:
- *
- *  - `SequenceNumber` — one row per numbered table; its `Table` field holds the
- *    exact PascalCase table name (Incident, Change, Problem, Asset, and custom
- *    "C_"/"AD_"-prefixed tables). This is the primary, confirmed source.
- *  - `cmdbmetadata`   — the CMDB class registry.
- *
- * Each source is best-effort and casing-robust (both the scripting lowercase and
- * REST PascalCase spellings are tried, field names match case-insensitively).
- * Anything not covered stays reachable via the resourceLocator "By Name" mode.
+ * The instance's table registry. One row per table; TABLE_LABEL_FIELD holds the
+ * human-readable class shown in the picker and `id` is the table name that goes
+ * into `/v1/{table}`, so a row maps straight onto a search item without any
+ * name-to-endpoint translation.
  */
-const TABLE_SOURCES: ReadonlyArray<{ table: string; field: string }> = [
-  { table: 'SequenceNumber', field: 'table' },
-  { table: 'cmdbmetadata', field: 'name' },
-];
+const TABLE_DEFINITION_TABLE = 'TableDefinition';
 
-/** Numbering/CMDB registries are small, so discovery reads them in large pages. */
+/** Field holding a table's display label in `TableDefinition`. */
+const TABLE_LABEL_FIELD = 'Table';
+
+/** The instance's field registry: one row per field per table. */
+const FIELD_DEFINITION_TABLE = 'FieldDefinition';
+
+/** `FieldDefinition` reference back to the table a field belongs to. */
+const FIELD_TABLE_FIELD = 'Table';
+
+/** `FieldDefinition` field holding the API name of the field itself. */
+const FIELD_NAME_FIELD = 'FieldName';
+
+/** Both registries are small, so they are read in large pages. */
 const DISCOVERY_PAGE_SIZE = 2000;
 
 /**
- * Ceiling on discovery paging. The Table picker loads its whole list in one go
- * (it is not `searchable`, so n8n filters client-side and never asks for a
- * second page), which means the paging happens here — and design-time work has
- * to stay bounded even if a metadata table turns out to be unexpectedly large.
+ * Ceiling on registry paging. Both the Table picker and the Field dropdown load
+ * their whole list in one go (neither is `searchable`, so n8n filters
+ * client-side and never asks for a second page), which means the paging happens
+ * here — and design-time work has to stay bounded even if a registry turns out
+ * to be unexpectedly large.
  */
 const MAX_DISCOVERY_PAGES = 10;
 
-/** Non-empty string value whose (lowercased) key matches `field`. */
-function valueForKey(row: ServicelyRecord, field: string): string | undefined {
-  const wanted = field.toLowerCase();
-  const key = Object.keys(row).find((candidate) => candidate.toLowerCase() === wanted);
-  const value = key === undefined ? undefined : row[key];
-  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
-}
-
 /**
- * Every row of a metadata table, paged to the end (or to MAX_DISCOVERY_PAGES).
- * A failure on the first page propagates, so the caller can treat it as "this
- * table/casing does not answer"; a failure once rows are in hand keeps the
- * partial read instead, discovery being best-effort by design.
+ * Every row of a table, paged to the end (or to MAX_DISCOVERY_PAGES). A failure
+ * on the first page propagates, so the caller can surface "the registry did not
+ * answer"; a failure once rows are in hand keeps the partial read instead, a
+ * half-populated picker being more useful than an error.
  */
-async function allRows(ctx: ILoadOptionsFunctions, table: string, pageSize: number): Promise<ServicelyRecord[]> {
+async function allRows(
+  ctx: ILoadOptionsFunctions,
+  table: string,
+  pageSize: number,
+  query?: IDataObject,
+): Promise<ServicelyRecord[]> {
   const rows: ServicelyRecord[] = [];
 
   /* eslint-disable no-await-in-loop -- pagination is inherently sequential */
   for (let page = 1; page <= MAX_DISCOVERY_PAGES; page++) {
     let batch: ServicelyRecord[];
     try {
-      batch = await listRecords(ctx, table, undefined, pageSize, page);
+      batch = await listRecords(ctx, table, query, pageSize, page);
     } catch (error) {
       if (page === 1) {
         throw error;
@@ -199,85 +210,71 @@ async function allRows(ctx: ILoadOptionsFunctions, table: string, pageSize: numb
   return rows;
 }
 
-/** Read `field` off every row of a metadata table, trying name casings, tolerating errors. */
-async function namesFrom(ctx: ILoadOptionsFunctions, table: string, field: string): Promise<string[]> {
-  const pascal = table.charAt(0).toUpperCase() + table.slice(1);
-  for (const name of new Set([table, pascal])) {
-    try {
-      // eslint-disable-next-line no-await-in-loop -- casings are tried in order until one responds
-      const rows = await allRows(ctx, name, DISCOVERY_PAGE_SIZE);
-      const names = rows.map((row) => valueForKey(row, field)).filter((value): value is string => value !== undefined);
-      if (names.length > 0) {
-        return names;
-      }
-    } catch {
-      // this casing is absent/forbidden; try the next
-    }
+/**
+ * Every `TableDefinition` row as a search item — TABLE_LABEL_FIELD for the
+ * label, `id` for the stored value — deduped on the value and sorted by label.
+ * Rows with no usable id are skipped; a registry that cannot be read at all
+ * leaves the list empty, and tables stay reachable via the locator's "By Name"
+ * mode.
+ */
+export async function discoverTables(ctx: ILoadOptionsFunctions): Promise<INodeListSearchItems[]> {
+  let rows: ServicelyRecord[];
+  try {
+    rows = await allRows(ctx, TABLE_DEFINITION_TABLE, DISCOVERY_PAGE_SIZE);
+  } catch {
+    return [];
   }
-  return [];
+
+  const byValue = new Map<string, INodeListSearchItems>();
+  for (const row of rows) {
+    const value = fieldString(row, 'id');
+    if (value === undefined || byValue.has(value)) {
+      continue;
+    }
+    byValue.set(value, searchItem(fieldString(row, TABLE_LABEL_FIELD) ?? value, value));
+  }
+
+  return [...byValue.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
- * Metadata sources can name tables that aren't actually queryable (e.g. rows left
- * behind by uninstalled apps — `CalendarEvent` 404s). One `_batch` probes every
- * candidate; only names whose sub-response is an explicit error (>= 400) are
- * dropped. If batch is unavailable the candidates are kept unfiltered (better a
- * superset than an empty list).
+ * Field names of one table, from `FieldDefinition` rows whose `Table` reference
+ * matches it — that reference holds the table id, which is exactly what the
+ * Table picker stores. Deduped and sorted; a registry that cannot be read leaves
+ * the list empty rather than failing the parameter load.
  */
-async function dropMissingTables(ctx: ILoadOptionsFunctions, names: string[]): Promise<string[]> {
-  if (names.length === 0) {
-    return names;
+export async function discoverFields(ctx: ILoadOptionsFunctions, table: string): Promise<string[]> {
+  if (!table) {
+    return [];
   }
-  const requests: BatchRequest[] = names.map((table, index) => ({
-    id: String(index + 1),
-    method: 'GET',
-    url: `/v1/${table}?page_size=1`,
-    body: null,
-  }));
 
+  let rows: ServicelyRecord[];
   try {
-    const response = (await servicelyApiRequest.call(ctx, 'POST', '/v1/_batch', {
-      id: `n8n-batch-${Date.now()}`,
-      requests: requests as unknown as IDataObject[],
-    })) as BatchResponse;
-
-    const missing = new Set<string>();
-    for (const subResponse of response.requests ?? []) {
-      const name = names[Number(subResponse.id) - 1];
-      if (name !== undefined && subResponse.status_code >= 400) {
-        missing.add(name);
-      }
-    }
-    return names.filter((name) => !missing.has(name));
+    rows = await allRows(ctx, FIELD_DEFINITION_TABLE, DISCOVERY_PAGE_SIZE, {
+      and: [{ fieldName: FIELD_TABLE_FIELD, operator: '=', value: table }],
+    });
   } catch {
-    return names;
+    return [];
   }
-}
 
-/** Discover instance table names from confirmed metadata sources (validated, deduped, sorted). */
-export async function discoverTables(ctx: ILoadOptionsFunctions): Promise<string[]> {
-  const perSource = await Promise.all(TABLE_SOURCES.map((source) => namesFrom(ctx, source.table, source.field)));
-
-  const byKey = new Map<string, string>();
-  for (const name of perSource.flat()) {
-    const key = name.toLowerCase();
-    if (!byKey.has(key)) {
-      byKey.set(key, name);
+  const names = new Set<string>();
+  for (const row of rows) {
+    const name = fieldString(row, FIELD_NAME_FIELD);
+    if (name !== undefined) {
+      names.add(name);
     }
   }
 
-  const existing = await dropMissingTables(ctx, [...byKey.values()]);
-  return existing.sort((a, b) => a.localeCompare(b));
+  return [...names].sort((a, b) => a.localeCompare(b));
 }
 
 // ---------------------------------------------------------------------------
 // listSearch methods
 // ---------------------------------------------------------------------------
 
-/** Table names discovered dynamically from the instance (Table picker). */
+/** Every table the instance's `TableDefinition` registry lists (Table picker). */
 export async function searchTables(this: ILoadOptionsFunctions, filter?: string): Promise<INodeListSearchResult> {
-  const tables = await discoverTables(this);
-  const results = tables.map((table) => ({ name: table, value: table })).filter((item) => matchesFilter(item, filter));
+  const results = (await discoverTables(this)).filter((item) => matchesFilter(item, filter));
   return { results };
 }
 
@@ -425,6 +422,23 @@ export async function searchControllers(
   return pickerPage(results, page, records.length);
 }
 
+// ---------------------------------------------------------------------------
+// loadOptions methods
+// ---------------------------------------------------------------------------
+
+/**
+ * Fields of the selected `tableName`, for the Field dropdowns nested in Get
+ * Many's Filters and Create/Update's Fields to Set. These are `options` rather
+ * than resourceLocators so the stored value stays a plain field-name string —
+ * the shape `buildListQuery` and `fieldsToSet` already read, which keeps
+ * existing workflows working. `loadOptionsDependsOn` reloads the list whenever
+ * the table changes.
+ */
+export async function getFields(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+  const fields = await discoverFields(this, readLocatorValue(this, 'tableName'));
+  return fields.map((field) => ({ name: field, value: field }));
+}
+
 /** The `methods` block attached to both nodes. */
 export const listSearchMethods = {
   listSearch: {
@@ -435,5 +449,8 @@ export const listSearchMethods = {
     searchQueues,
     searchActions,
     searchControllers,
+  },
+  loadOptions: {
+    getFields,
   },
 };

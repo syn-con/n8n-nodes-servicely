@@ -221,7 +221,7 @@ nodes/Servicely/
       index.ts
       call.operation.ts        # raw POST to /controller/{ControllerName}
   GenericFunctions.ts          # API request helpers + query builders
-  SearchFunctions.ts           # methods.listSearch pickers + table discovery
+  SearchFunctions.ts           # listSearch pickers + Table/Field registry loaders
   constants.ts
   types.ts
 ```

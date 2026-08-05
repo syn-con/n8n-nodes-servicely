@@ -35,6 +35,10 @@ interface FieldEntry {
 
 /** Read a resourceLocator's resolved value (table name, record id, ...). */
 export function locator(ctx: IExecuteFunctions, name: string, index: number): string {
+  if (name === 'tableName') {
+    const param = ctx.getNodeParameter(name, index, '', { extractValue: false }) as IDataObject;
+    return param.cachedResultName as string;
+  }
   return ctx.getNodeParameter(name, index, '', { extractValue: true }) as string;
 }
 
@@ -252,7 +256,7 @@ export async function servicelyApiRequestAllItems(
   let page = 1;
 
   /* eslint-disable no-await-in-loop -- pagination is inherently sequential */
-  for (;;) {
+  for (; ;) {
     const data = toRecordList<IDataObject>(
       await servicelyApiRequest.call(this, 'GET', endpoint, undefined, {
         ...qs,
