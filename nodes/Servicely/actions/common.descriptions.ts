@@ -16,9 +16,9 @@ import { EQUALS_UI_VALUE, DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT_MS, QUERY_OPERATO
  * A reference the user picks from the instance (table, parent record, attachment,
  * queue, action) is a `resourceLocator`: the "From List" mode loads options
  * dynamically, while a second mode accepts a raw name/id or an expression. This
- * is n8n's native manual-vs-ID toggle, so no bespoke switch is needed. The one
- * reference that is not a locator is the Object operations' Record ID — see
- * `recordIdProperty` for why.
+ * is n8n's native manual-vs-ID toggle, so no bespoke switch is needed. The
+ * references that are not locators are the ids naming a single record — see
+ * `idProperty` for why.
  */
 
 interface TableLocatorConfig {
@@ -57,21 +57,28 @@ export function tableResourceLocator(config: TableLocatorConfig): INodePropertie
   };
 }
 
+interface IdConfig {
+  name: string;
+  displayName: string;
+  description: string;
+}
+
 /**
- * A record id typed by hand or arriving from an expression. The Object
- * operations that address one record (Get / Update / Delete) take this rather
- * than a picker: their table is arbitrary, so a "From List" mode would page
- * through whatever table is selected to find an id the upstream node already
- * has, and every practical workflow feeds `{{ $json.id }}` in anyway.
+ * A record id typed by hand or arriving from an expression, for the operations
+ * that address exactly one record: Object Get / Update / Delete and Attachment
+ * Download. None of them gets a picker — the id is what the upstream node
+ * already carries (`{{ $json.id }}`), so paging a list to find it buys nothing,
+ * and for the Object operations the list would be of whatever arbitrary table is
+ * selected.
  */
-export function recordIdProperty(description: string): INodeProperties {
+export function idProperty(config: IdConfig): INodeProperties {
   return {
-    displayName: 'Record ID',
-    name: 'recordId',
+    displayName: config.displayName,
+    name: config.name,
     type: 'string',
     default: '',
     required: true,
-    description,
+    description: config.description,
     placeholder: 'e.g. c0a80101-...',
   };
 }

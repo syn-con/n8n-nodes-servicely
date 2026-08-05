@@ -96,6 +96,8 @@ The field entries are dropdowns loaded from the selected table's `FieldDefinitio
 
 `Parent Record` uses Servicely's `{recordId}:{tableName}` format (e.g. `abc123:Incident`), built for you from the **Parent Table** + **Parent Record ID** fields.
 
+**Attachment ID** (Download) is a plain id field like **Record ID** — typed or from an expression (`{{ $json.id }}`), with no picker, since the id normally comes from an upstream List or Upload.
+
 ### Global Search
 
 Full-text search over one table through the instance's Global Search controller (`POST {instanceUrl}/controller/GlobalSearch`) rather than through a `/v1` query.

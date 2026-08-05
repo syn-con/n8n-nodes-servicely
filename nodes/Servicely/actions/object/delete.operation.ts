@@ -6,9 +6,11 @@ import {
 } from 'n8n-workflow';
 
 import { locatorLabel, servicelyApiRequest, stringParam } from '../../GenericFunctions';
-import { recordIdProperty } from '../common.descriptions';
+import { idProperty } from '../common.descriptions';
 
-const properties: INodeProperties[] = [recordIdProperty('ID of the record to delete')];
+const properties: INodeProperties[] = [
+  idProperty({ name: 'recordId', displayName: 'Record ID', description: 'ID of the record to delete' }),
+];
 
 export const description = updateDisplayOptions(
   { show: { resource: ['object'], operation: ['delete'] } },

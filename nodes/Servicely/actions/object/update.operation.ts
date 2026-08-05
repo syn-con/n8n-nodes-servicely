@@ -7,10 +7,10 @@ import {
 } from 'n8n-workflow';
 
 import { fieldsToSet, locatorLabel, servicelyApiRequest, stringParam } from '../../GenericFunctions';
-import { fieldsToSetProperty, recordIdProperty } from '../common.descriptions';
+import { fieldsToSetProperty, idProperty } from '../common.descriptions';
 
 const properties: INodeProperties[] = [
-  recordIdProperty('ID of the record to update'),
+  idProperty({ name: 'recordId', displayName: 'Record ID', description: 'ID of the record to update' }),
   fieldsToSetProperty,
 ];
 

@@ -7,10 +7,10 @@ import {
 } from 'n8n-workflow';
 
 import { buildSelectors, locatorLabel, servicelyApiRequest, stringParam } from '../../GenericFunctions';
-import { recordIdProperty, selectorOptionsProperty } from '../common.descriptions';
+import { idProperty, selectorOptionsProperty } from '../common.descriptions';
 
 const properties: INodeProperties[] = [
-  recordIdProperty('ID of the record to retrieve'),
+  idProperty({ name: 'recordId', displayName: 'Record ID', description: 'ID of the record to retrieve' }),
   selectorOptionsProperty,
 ];
 

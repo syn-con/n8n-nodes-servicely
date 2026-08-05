@@ -7,7 +7,6 @@ import {
   getFields,
   listSearchMethods,
   searchActions,
-  searchAttachments,
   searchControllers,
   searchFields,
   searchGlobalSearchTables,
@@ -50,7 +49,6 @@ describe('listSearchMethods', () => {
   it('exposes every picker the descriptions reference', () => {
     expect(Object.keys(listSearchMethods.listSearch).sort()).toEqual([
       'searchActions',
-      'searchAttachments',
       'searchControllers',
       'searchFields',
       'searchGlobalSearchTables',
@@ -317,12 +315,11 @@ describe('record pickers', () => {
     expect(http.calls[0].options.url).toBe('/v1/Change');
   });
 
-  it('always searches the Attachment table for the attachment picker', async () => {
-    const { ctx, http } = ctxFor([ok([{ id: 'a1', FileName: 'x.png' }])]);
+  it('labels a record by its FileName when that is the field it carries', async () => {
+    const { ctx } = ctxFor([ok([{ id: 'a1', FileName: 'x.png' }])], { parentTable: 'Attachment' });
 
-    const result = await searchAttachments.call(ctx as ILoadOptionsFunctions);
+    const result = await searchParentRecords.call(ctx as ILoadOptionsFunctions);
 
-    expect(http.calls[0].options.url).toBe('/v1/Attachment');
     expect(result.results).toEqual([{ name: 'x.png', value: 'a1' }]);
   });
 });

@@ -296,15 +296,6 @@ export async function searchParentRecords(
   return searchRecordsInTable(this, readLocatorValue(this, 'parentTable'), filter, paginationToken);
 }
 
-/** Records of the `Attachment` table (Attachment picker). */
-export async function searchAttachments(
-  this: ILoadOptionsFunctions,
-  filter?: string,
-  paginationToken?: string,
-): Promise<INodeListSearchResult> {
-  return searchRecordsInTable(this, 'Attachment', filter, paginationToken);
-}
-
 /**
  * Tables the Global Search controller is configured to search. This is the one
  * picker that is not a table read: the controller answers its own configuration
@@ -498,7 +489,6 @@ export const listSearchMethods = {
     searchTables,
     searchFields,
     searchParentRecords,
-    searchAttachments,
     searchGlobalSearchTables,
     searchQueues,
     searchActions,

@@ -5,16 +5,15 @@ import {
   updateDisplayOptions,
 } from 'n8n-workflow';
 
-import { locator, servicelyApiRequest } from '../../GenericFunctions';
-import { recordResourceLocator } from '../common.descriptions';
+import { servicelyApiRequest, stringParam } from '../../GenericFunctions';
+import { idProperty } from '../common.descriptions';
 import type { AttachmentRecord } from '../../types';
 
 const properties: INodeProperties[] = [
-  recordResourceLocator({
+  idProperty({
     name: 'attachmentId',
-    displayName: 'Attachment',
-    description: 'The attachment record to download',
-    searchListMethod: 'searchAttachments',
+    displayName: 'Attachment ID',
+    description: 'ID of the attachment record to download',
   }),
   {
     displayName: 'Put Output File in Field',
@@ -36,7 +35,7 @@ export async function execute(this: IExecuteFunctions, index: number): Promise<I
   const record = (await servicelyApiRequest.call(
     this,
     'GET',
-    `/v1/Attachment/${locator(this, 'attachmentId', index)}`,
+    `/v1/Attachment/${stringParam(this, 'attachmentId', index)}`,
   )) as AttachmentRecord;
 
   const buffer = Buffer.from((record.Data as string) ?? '', 'base64');
