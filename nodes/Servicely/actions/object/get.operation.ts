@@ -6,24 +6,19 @@ import {
   updateDisplayOptions,
 } from 'n8n-workflow';
 
-import { buildSelectors, locator, servicelyApiRequest } from '../../GenericFunctions';
-import { recordResourceLocator, selectorOptionsProperty } from '../common.descriptions';
+import { buildSelectors, locatorLabel, servicelyApiRequest, stringParam } from '../../GenericFunctions';
+import { recordIdProperty, selectorOptionsProperty } from '../common.descriptions';
 
 const properties: INodeProperties[] = [
-  recordResourceLocator({
-    name: 'recordId',
-    displayName: 'Record',
-    description: 'The record to retrieve',
-    searchListMethod: 'searchObjectRecords',
-  }),
+  recordIdProperty('ID of the record to retrieve'),
   selectorOptionsProperty,
 ];
 
 export const description = updateDisplayOptions({ show: { resource: ['object'], operation: ['get'] } }, properties);
 
 export async function execute(this: IExecuteFunctions, index: number): Promise<INodeExecutionData[]> {
-  const table = locator(this, 'tableName', index);
-  const id = locator(this, 'recordId', index);
+  const table = locatorLabel(this, 'tableName', index);
+  const id = stringParam(this, 'recordId', index);
   const record = await servicelyApiRequest.call(
     this,
     'GET',

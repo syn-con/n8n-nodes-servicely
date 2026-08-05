@@ -57,16 +57,24 @@ Secrets are stored encrypted by n8n and are never written into workflow data.
 | **Update** | `PATCH /v1/{Table}/{id}` | Patch the given fields. |
 | **Delete** | `DELETE /v1/{Table}/{id}` | Delete by id. |
 
+**Choosing the table and its fields:**
+
+- **Table** — **From List** reads the instance's `TableDefinition` registry and stores each row's `Table` value: the API table name that goes into `/v1/{Table}`. Or switch to **By Name** for a table name / expression.
+- **Record ID** (Get / Update / Delete) — a plain id field, typed or from an expression (`{{ $json.id }}`). There is no picker: the table is arbitrary, so an id coming from an upstream node wires straight through instead of being hunted for in a list.
+- **Field Name** (in **Filters** and **Fields to Set**) — **From List** shows the selected table's fields: the table name is resolved to its `TableDefinition` id, then `FieldDefinition` rows with that `TableId` are listed. Or switch to **By Name** for anything the registry cannot list: a dot-walked relation (`Requestor.Email`), or a field on a table that is itself set by expression.
+
 **Selecting data** (Get / Get Many → *Options*):
 
-- **Fields** — comma-separated fields to return (`id,Number,ShortDescription`).
-- **Display Value Fields** — returns `{ value, displayValue }` for reference fields.
-- **Relation Fields** — dot-walk relations (`Requestor.Name,Requestor.Manager.Name`).
-- **Sort Field** / **Sort Descending**.
+The field entries are dropdowns loaded from the selected table's `FieldDefinition` rows — no typing field names by hand. Change the **Table** and the lists reload. A table set by an expression cannot be resolved at design time, so the dropdown comes up empty; switch the parameter to an expression there and pass a comma-separated list (which is also what workflows saved before these dropdowns keep sending).
+
+- **Fields** — multi-select of the fields to return. Empty means the API default (every field).
+- **Display Value Fields** — multi-select of reference fields to return as `{ value, displayValue }`.
+- **Relation Fields** — still a typed comma-separated list (`Requestor.Name,Requestor.Manager.Name`): the registry holds one table's own fields, while a relation path walks through other tables.
+- **Sort Field** (single-select of the same field list) / **Sort Descending**.
 
 **Filtering** (Get Many):
 
-- **Filters** — a simple builder: pick a field, operator, and value; conditions are combined with **AND**.
+- **Filters** — a simple builder: pick a field (from the list or by name), an operator, and a value; conditions are combined with **AND**.
   - Operators: `=`, `!=`, `startswith`, `contains`, `doesnotcontain`, `isempty`, `isnotempty`, `in`, `notIn`, `<`, `>`, `<=`, `>=`, `between`.
   - For `in` / `notIn` / `between`, enter a comma-separated list. `isempty` / `isnotempty` take no value.
 - **Query (JSON)** (in *Options*) — for `OR`/`NOR` or nested logic. When set, it **takes precedence** over the simple Filters. Example:
@@ -230,7 +238,7 @@ nodes/Servicely/
 - `router.ts` owns the item loop, `continueOnFail`, and error wrapping, so operations carry no boilerplate.
 - `node.type.ts` makes the resource/operation pairing a compile-time union — an unregistered operation fails to build rather than at runtime.
 - `credentials/ServicelyApi.credentials.ts` — its `authenticate` resolves the instance URL into `baseURL` and signs every request (Basic / Bearer / HMAC), so no node code reads credentials.
-- `SearchFunctions.ts` — every **From List** picker is paginated. Servicely's list endpoints are offset-based, so each picker page returns n8n's `paginationToken` (the next page number) whenever the API filled the page; n8n asks for the next one as the user scrolls. Because the API has no text-search parameter, the typed filter is applied per page — a page emptied by filtering still hands back its token, so matches further in the table are not stranded. The **Table** picker is the exception: it is not `searchable`, so n8n loads it in one go and the paging happens internally (bounded, since it runs at design time).
+- `SearchFunctions.ts` — every **From List** picker is paginated. Servicely's list endpoints are offset-based, so each picker page returns n8n's `paginationToken` (the next page number) whenever the API filled the page; n8n asks for the next one as the user scrolls. Because the API has no text-search parameter, the typed filter is applied per page — a page emptied by filtering still hands back its token, so matches further in the table are not stranded. The **Table** and **Field Name** pickers are the exception: neither is `searchable`, so n8n loads each registry in one go and filters client-side, and the paging happens internally (bounded, since it runs at design time).
 
 Adding an operation means: add `<name>.operation.ts`, register it in the
 resource's `index.ts` (export + selector option), and add it to `node.type.ts`.

@@ -1,4 +1,4 @@
-import type { IExecuteFunctions } from 'n8n-workflow';
+import type { IExecuteFunctions, INodeProperties } from 'n8n-workflow';
 import { describe, expect, it } from 'vitest';
 
 import { Servicely } from '../Servicely.node';
@@ -28,16 +28,27 @@ describe('node description', () => {
 
   it('exposes every listSearch method the resourceLocators reference', () => {
     const referenced = new Set<string>();
-    for (const property of node.description.properties) {
-      for (const mode of property.modes ?? []) {
-        const method = mode.typeOptions?.searchListMethod;
-        if (method) {
-          referenced.add(method);
+
+    /** Walk properties and the values nested inside collections (Field locators live there). */
+    function collect(properties: INodeProperties[]): void {
+      for (const property of properties) {
+        for (const mode of property.modes ?? []) {
+          const method = mode.typeOptions?.searchListMethod;
+          if (method) {
+            referenced.add(method);
+          }
+        }
+        for (const option of property.options ?? []) {
+          if ('values' in option) {
+            collect(option.values as INodeProperties[]);
+          }
         }
       }
     }
+    collect(node.description.properties);
 
     expect(referenced.size).toBeGreaterThan(0);
+    expect(referenced).toContain('searchFields');
     for (const method of referenced) {
       expect(node.methods.listSearch).toHaveProperty(method);
     }
@@ -64,6 +75,48 @@ describe('object resource', () => {
     expect(http.calls[0].options.url).toBe('/v1/Incident');
     expect(http.calls[0].options.body).toEqual({ ShortDescription: 'printer down' });
     expect(items).toEqual([{ json: { id: '1', ShortDescription: 'printer down' }, pairedItem: { item: 0 } }]);
+  });
+
+  it('accepts Field locator rows alongside the plain names older workflows saved', async () => {
+    const http = makeHttpStub([ok({ id: '1' })]);
+    await run({
+      http,
+      params: {
+        resource: 'object',
+        operation: 'create',
+        tableName: 'Incident',
+        'fieldsToSet.field': [
+          { name: { __rl: true, mode: 'list', value: 'ShortDescription' }, value: 'printer down' },
+          { name: { __rl: true, mode: 'name', value: 'Requestor.Email' }, value: 'a@b.c' },
+          { name: 'State', value: 'Open' },
+          { name: { __rl: true, mode: 'list', value: '' }, value: 'dropped' },
+        ],
+      },
+    });
+
+    expect(http.calls[0].options.body).toEqual({
+      ShortDescription: 'printer down',
+      'Requestor.Email': 'a@b.c',
+      State: 'Open',
+    });
+  });
+
+  it('builds a filter query from a Field locator row', async () => {
+    const http = makeHttpStub([ok([{ id: '1' }])]);
+    await run({
+      http,
+      params: {
+        resource: 'object',
+        operation: 'getAll',
+        tableName: 'Incident',
+        limit: 1,
+        'filters.conditions': [
+          { fieldName: { __rl: true, mode: 'list', value: 'State' }, operator: EQUALS_UI_VALUE, value: 'Open' },
+        ],
+      },
+    });
+
+    expect(http.calls[0].options.qs?.query).toBe('{"and":[{"fieldName":"State","operator":"=","value":"Open"}]}');
   });
 
   it('gets a single record with only the selector options', async () => {
@@ -144,6 +197,21 @@ describe('object resource', () => {
 
     expect(http.calls[0].options.method).toBe('DELETE');
     expect(items[0].json).toEqual({ success: true, table: 'Incident', id: 'r1' });
+  });
+
+  it('trims a pasted record id', async () => {
+    const http = makeHttpStub([ok({ id: 'r1' })]);
+    await run({
+      http,
+      params: {
+        resource: 'object',
+        operation: 'get',
+        tableName: { __rl: true, mode: 'list', value: 'guid-1', cachedResultName: 'Incident' },
+        recordId: '  r1 ',
+      },
+    });
+
+    expect(http.calls[0].options.url).toBe('/v1/Incident/r1');
   });
 
   it('rejects an unknown operation', async () => {

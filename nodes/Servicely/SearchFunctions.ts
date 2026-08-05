@@ -11,13 +11,11 @@ import { servicelyApiRequest, toRecordList } from './GenericFunctions';
 import type { ServicelyRecord } from './types';
 
 /**
- * The nodes' dynamic parameter loaders.
- *
- * `methods.listSearch` backs the "From List" mode of every resourceLocator: the
- * Table and Record pickers on the Servicely node, and the Queue / Action Name
- * pickers on the trigger. `methods.loadOptions` backs the Field dropdowns nested
- * inside fixedCollections, where a resourceLocator's `{mode, value}` shape would
- * not fit the plain strings those rows store.
+ * The dynamic-option loaders both nodes expose: `methods.listSearch` backing the
+ * "From List" mode of every resourceLocator (the Table, Field, and Record
+ * pickers on the Servicely node, the Queue / Action Name pickers on the
+ * trigger), plus the one `methods.loadOptions` entry — `getFields` — that feeds
+ * the field dropdowns in the Options collections.
  *
  * Every searchable picker is paginated: n8n calls the method with the
  * `paginationToken` from the previous result once the user scrolls past the
@@ -40,6 +38,7 @@ const QUEUE_TABLE = 'ActionProviderInstance';
 const ACTION_TABLE = 'Action';
 const ASYNC_CONNECTION_TYPE = 'async_integration';
 
+const ID_FIELD = 'id';
 /** Fetch one page of a table, optionally filtered by a complex query. */
 async function listRecords(
   ctx: ILoadOptionsFunctions,
@@ -86,6 +85,7 @@ function matchesFilter(item: INodeListSearchItems, filter?: string): boolean {
 function readLocatorValue(ctx: ILoadOptionsFunctions, name: string): string {
   return String(ctx.getNodeParameter(name, '', { extractValue: true }) ?? '').trim();
 }
+
 
 /** Read a string field off a record, treating empty/non-string as absent. */
 function fieldString(record: ServicelyRecord, field: string): string | undefined {
@@ -144,20 +144,25 @@ async function searchRecordsInTable(
 // ---------------------------------------------------------------------------
 
 /**
- * The instance's table registry. One row per table; TABLE_LABEL_FIELD holds the
- * human-readable class shown in the picker and `id` is the table name that goes
- * into `/v1/{table}`, so a row maps straight onto a search item without any
- * name-to-endpoint translation.
+ * The instance's table registry: one row per table. TABLE_NAME_FIELD holds the
+ * API table name — the segment that goes into `/v1/{table}` — which is what the
+ * picker stores and shows. The row's `id` is an opaque key, so it is never used
+ * as the value: a locator has to resolve to the same plain table name whether it
+ * came from the list, was typed by name, or arrived from an expression.
  */
 const TABLE_DEFINITION_TABLE = 'TableDefinition';
 
-/** Field holding a table's display label in `TableDefinition`. */
-const TABLE_LABEL_FIELD = 'Table';
+/** Field holding a table's API name in `TableDefinition`. */
+const TABLE_NAME_FIELD = 'Table';
 
 /** The instance's field registry: one row per field per table. */
 const FIELD_DEFINITION_TABLE = 'FieldDefinition';
 
-/** `FieldDefinition` reference back to the table a field belongs to. */
+/**
+ * `FieldDefinition` reference back to the table a field belongs to. It holds the
+ * `TableDefinition` row's id, not the table name, so listing a table's fields
+ * takes a name → id lookup first (see `tableId`).
+ */
 const FIELD_TABLE_FIELD = 'Table';
 
 /** `FieldDefinition` field holding the API name of the field itself. */
@@ -211,11 +216,10 @@ async function allRows(
 }
 
 /**
- * Every `TableDefinition` row as a search item — TABLE_LABEL_FIELD for the
- * label, `id` for the stored value — deduped on the value and sorted by label.
- * Rows with no usable id are skipped; a registry that cannot be read at all
- * leaves the list empty, and tables stay reachable via the locator's "By Name"
- * mode.
+ * Every `TableDefinition` row as a search item, keyed and labelled by its API
+ * table name, deduped and sorted. Rows carrying no name are skipped; a registry
+ * that cannot be read at all leaves the list empty, and tables stay reachable
+ * via the locator's "By Name" mode.
  */
 export async function discoverTables(ctx: ILoadOptionsFunctions): Promise<INodeListSearchItems[]> {
   let rows: ServicelyRecord[];
@@ -225,29 +229,30 @@ export async function discoverTables(ctx: ILoadOptionsFunctions): Promise<INodeL
     return [];
   }
 
-  const byValue = new Map<string, INodeListSearchItems>();
+  const byName = new Map<string, INodeListSearchItems>();
   for (const row of rows) {
-    const value = fieldString(row, 'id');
-    if (value === undefined || byValue.has(value)) {
+    const name = fieldString(row, TABLE_NAME_FIELD)?.trim();
+    if (name === undefined || byName.has(name)) {
       continue;
     }
-    byValue.set(value, searchItem(fieldString(row, TABLE_LABEL_FIELD) ?? value, value));
+    const id = fieldString(row, ID_FIELD)?.trim();
+    byName.set(name, searchItem(name, id ?? name));
   }
-
-  return [...byValue.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
- * Field names of one table, from `FieldDefinition` rows whose `Table` reference
- * matches it — that reference holds the table id, which is exactly what the
- * Table picker stores. Deduped and sorted; a registry that cannot be read leaves
- * the list empty rather than failing the parameter load.
+ * Every `FieldDefinition` row of one table as a search item, exactly as
+ * `discoverTables` treats the table registry: keyed and labelled by the field's
+ * API name, rows carrying no name skipped, deduped and sorted. The rows are the
+ * ones whose `TableId` matches the table, resolved from its name first. A registry
+ * that cannot be read (or a name absent from it) leaves the list empty, and fields
+ * stay reachable via the locator's "By Name" mode.
  */
-export async function discoverFields(ctx: ILoadOptionsFunctions, table: string): Promise<string[]> {
+export async function discoverFields(ctx: ILoadOptionsFunctions, table: string): Promise<INodeListSearchItems[]> {
   if (!table) {
     return [];
   }
-
   let rows: ServicelyRecord[];
   try {
     rows = await allRows(ctx, FIELD_DEFINITION_TABLE, DISCOVERY_PAGE_SIZE, {
@@ -256,16 +261,17 @@ export async function discoverFields(ctx: ILoadOptionsFunctions, table: string):
   } catch {
     return [];
   }
-
-  const names = new Set<string>();
+  const byName = new Map<string, INodeListSearchItems>();
   for (const row of rows) {
-    const name = fieldString(row, FIELD_NAME_FIELD);
-    if (name !== undefined) {
-      names.add(name);
+    const name = fieldString(row, FIELD_NAME_FIELD)?.trim();
+    if (name === undefined || byName.has(name)) {
+      continue;
     }
+    byName.set(name, searchItem(name, name));
   }
 
-  return [...names].sort((a, b) => a.localeCompare(b));
+
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // ---------------------------------------------------------------------------
@@ -276,15 +282,6 @@ export async function discoverFields(ctx: ILoadOptionsFunctions, table: string):
 export async function searchTables(this: ILoadOptionsFunctions, filter?: string): Promise<INodeListSearchResult> {
   const results = (await discoverTables(this)).filter((item) => matchesFilter(item, filter));
   return { results };
-}
-
-/** Records of the Object resource's selected `tableName`. */
-export async function searchObjectRecords(
-  this: ILoadOptionsFunctions,
-  filter?: string,
-  paginationToken?: string,
-): Promise<INodeListSearchResult> {
-  return searchRecordsInTable(this, readLocatorValue(this, 'tableName'), filter, paginationToken);
 }
 
 /** Records of the Attachment resource's `parentTable`. */
@@ -422,35 +419,46 @@ export async function searchControllers(
   return pickerPage(results, page, records.length);
 }
 
-// ---------------------------------------------------------------------------
-// loadOptions methods
-// ---------------------------------------------------------------------------
+/**
+ * Fields of the selected `tableName`, backing the Field locators nested in Get
+ * Many's Filters and Create/Update's Fields to Set. Being a listSearch method
+ * rather than a loadOptions one, the registry is read when the dropdown opens,
+ * so switching tables can never serve the previous table's fields.
+ */
+export async function searchFields(this: ILoadOptionsFunctions, filter?: string): Promise<INodeListSearchResult> {
+  const fields = await discoverFields(this, readLocatorValue(this, 'tableName'));
+  return { results: fields.filter((item) => matchesFilter(item, filter)) };
+}
 
 /**
- * Fields of the selected `tableName`, for the Field dropdowns nested in Get
- * Many's Filters and Create/Update's Fields to Set. These are `options` rather
- * than resourceLocators so the stored value stays a plain field-name string —
- * the shape `buildListQuery` and `fieldsToSet` already read, which keeps
- * existing workflows working. `loadOptionsDependsOn` reloads the list whenever
- * the table changes.
+ * Fields of the selected `tableName` as dropdown options, backing the Fields /
+ * Display Value Fields multi-selects and the Sort Field picker in the Options
+ * collections. A `loadOptions` method rather than a `listSearch` one because
+ * `multiOptions` (n8n's only multi-select) can be fed no other way; the
+ * properties name `tableName.value` in `loadOptionsDependsOn`, so switching
+ * tables reloads the list instead of serving the previous table's fields.
+ *
+ * A table that the registry cannot answer for — unreadable, or set by an
+ * expression that design time cannot resolve — yields an empty list. The
+ * selectors then stay reachable by switching the parameter to an expression.
  */
 export async function getFields(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
   const fields = await discoverFields(this, readLocatorValue(this, 'tableName'));
-  return fields.map((field) => ({ name: field, value: field }));
+  return fields.map((field) => ({ name: field.name, value: String(field.value) }));
 }
 
 /** The `methods` block attached to both nodes. */
 export const listSearchMethods = {
+  loadOptions: {
+    getFields,
+  },
   listSearch: {
     searchTables,
-    searchObjectRecords,
+    searchFields,
     searchParentRecords,
     searchAttachments,
     searchQueues,
     searchActions,
     searchControllers,
-  },
-  loadOptions: {
-    getFields,
   },
 };

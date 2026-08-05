@@ -9,7 +9,7 @@ import {
   searchActions,
   searchAttachments,
   searchControllers,
-  searchObjectRecords,
+  searchFields,
   searchParentRecords,
   searchQueues,
   searchTables,
@@ -51,7 +51,7 @@ describe('listSearchMethods', () => {
       'searchActions',
       'searchAttachments',
       'searchControllers',
-      'searchObjectRecords',
+      'searchFields',
       'searchParentRecords',
       'searchQueues',
       'searchTables',
@@ -64,11 +64,11 @@ describe('listSearchMethods', () => {
 });
 
 describe('discoverTables', () => {
-  it('reads TableDefinition, labelling by Table and keying by id', async () => {
+  it('reads TableDefinition and keys entries by the API table name, not the row id', async () => {
     const { ctx, http } = ctxFor([
       ok([
-        { id: 'Incident', Table: 'Incident' },
-        { id: 'ITSMRequest', Table: 'Service Request' },
+        { id: 'guid-1', Table: 'Incident' },
+        { id: 'guid-2', Table: 'ITSMRequest' },
       ]),
     ]);
 
@@ -78,27 +78,27 @@ describe('discoverTables', () => {
     expect(http.calls[0].options.qs).toEqual({ page: 1, page_size: DISCOVERY_PAGE_SIZE });
     expect(tables).toEqual([
       { name: 'Incident', value: 'Incident' },
-      { name: 'Service Request', value: 'ITSMRequest' },
+      { name: 'ITSMRequest', value: 'ITSMRequest' },
     ]);
   });
 
-  it('sorts by label and dedupes repeated ids', async () => {
+  it('sorts by name and dedupes repeated names', async () => {
     const { ctx } = ctxFor([
       ok([
-        { id: 'Change', Table: 'Zulu' },
-        { id: 'Asset', Table: 'Alpha' },
-        { id: 'Change', Table: 'Duplicate' },
+        { id: 'guid-1', Table: 'Zulu' },
+        { id: 'guid-2', Table: 'Alpha' },
+        { id: 'guid-3', Table: 'Zulu' },
       ]),
     ]);
 
     await expect(discoverTables(ctx)).resolves.toEqual([
-      { name: 'Alpha', value: 'Asset' },
-      { name: 'Zulu', value: 'Change' },
+      { name: 'Alpha', value: 'Alpha' },
+      { name: 'Zulu', value: 'Zulu' },
     ]);
   });
 
-  it('falls back to the id when the label field is blank', async () => {
-    const { ctx } = ctxFor([ok([{ id: 'Incident', Table: '  ' }])]);
+  it('skips rows with no usable table name', async () => {
+    const { ctx } = ctxFor([ok([{ id: 'guid-1', Table: '  ' }, { id: 'guid-2' }, { id: 'guid-3', Table: 'Incident' }])]);
 
     await expect(discoverTables(ctx)).resolves.toEqual([{ name: 'Incident', value: 'Incident' }]);
   });
@@ -114,8 +114,8 @@ describe('searchTables', () => {
   it('filters the registry entries client-side', async () => {
     const { ctx } = ctxFor([
       ok([
-        { id: 'Incident', Table: 'Incident' },
-        { id: 'Change', Table: 'Change' },
+        { id: 'guid-1', Table: 'Incident' },
+        { id: 'guid-2', Table: 'Change' },
       ]),
     ]);
 
@@ -126,8 +126,12 @@ describe('searchTables', () => {
 });
 
 describe('discoverFields', () => {
-  it('queries FieldDefinition by Table and returns sorted FieldNames', async () => {
+  /** The TableDefinition name → id lookup every field read starts with. */
+  const tableIdLookup = ok([{ id: 'guid-1', Table: 'Incident' }]);
+
+  it('resolves the table id, then keys FieldDefinition rows by FieldName as the table registry does', async () => {
     const { ctx, http } = ctxFor([
+      tableIdLookup,
       ok([
         { id: 'f1', FieldName: 'State' },
         { id: 'f2', FieldName: 'AssignmentGroup' },
@@ -136,21 +140,36 @@ describe('discoverFields', () => {
 
     const fields = await discoverFields(ctx, 'Incident');
 
-    expect(http.calls[0].options.url).toBe('/v1/FieldDefinition');
+    expect(http.calls[0].options.url).toBe('/v1/TableDefinition');
     expect(http.calls[0].options.qs).toEqual({
       page: 1,
-      page_size: DISCOVERY_PAGE_SIZE,
+      page_size: 1,
       query: JSON.stringify({ and: [{ fieldName: 'Table', operator: '=', value: 'Incident' }] }),
     });
-    expect(fields).toEqual(['AssignmentGroup', 'State']);
+    expect(http.calls[1].options.url).toBe('/v1/FieldDefinition');
+    expect(http.calls[1].options.qs).toEqual({
+      page: 1,
+      page_size: DISCOVERY_PAGE_SIZE,
+      query: JSON.stringify({ and: [{ fieldName: 'TableId', operator: '=', value: 'guid-1' }] }),
+    });
+    expect(fields).toEqual([
+      { name: 'AssignmentGroup', value: 'AssignmentGroup' },
+      { name: 'State', value: 'State' },
+    ]);
   });
 
-  it('dedupes names and skips rows with no FieldName', async () => {
+  it('dedupes names and skips rows with no usable FieldName', async () => {
     const { ctx } = ctxFor([
-      ok([{ id: 'f1', FieldName: 'State' }, { id: 'f2', FieldName: 'State' }, { id: 'f3', Label: 'no name' }]),
+      tableIdLookup,
+      ok([
+        { id: 'f1', FieldName: 'State' },
+        { id: 'f2', FieldName: 'State' },
+        { id: 'f3', FieldName: '  ' },
+        { id: 'f4', Label: 'no name' },
+      ]),
     ]);
 
-    await expect(discoverFields(ctx, 'Incident')).resolves.toEqual(['State']);
+    await expect(discoverFields(ctx, 'Incident')).resolves.toEqual([{ name: 'State', value: 'State' }]);
   });
 
   it('makes no request when no table is given', async () => {
@@ -160,23 +179,78 @@ describe('discoverFields', () => {
     expect(http.count()).toBe(0);
   });
 
-  it('returns an empty list when the registry does not respond', async () => {
-    const { ctx } = ctxFor([{ status: 404, body: {} }]);
+  it('stops at the lookup when the table is not in the registry', async () => {
+    const { ctx, http } = ctxFor([ok([])]);
 
-    await expect(discoverFields(ctx, 'Incident')).resolves.toEqual([]);
+    await expect(discoverFields(ctx, 'Nope')).resolves.toEqual([]);
+    expect(http.count()).toBe(1);
+  });
+
+  it('returns an empty list when a registry does not respond', async () => {
+    await expect(discoverFields(ctxFor([{ status: 404, body: {} }]).ctx, 'Incident')).resolves.toEqual([]);
+    await expect(
+      discoverFields(ctxFor([tableIdLookup, { status: 404, body: {} }]).ctx, 'Incident'),
+    ).resolves.toEqual([]);
+  });
+});
+
+describe('searchFields', () => {
+  it("offers the selected table's fields", async () => {
+    const { ctx, http } = ctxFor(
+      [ok([{ id: 'guid-1', Table: 'Incident' }]), ok([{ id: 'f1', FieldName: 'ShortDescription' }])],
+      { tableName: 'Incident' },
+    );
+
+    await expect(searchFields.call(ctx as ILoadOptionsFunctions)).resolves.toEqual({
+      results: [{ name: 'ShortDescription', value: 'ShortDescription' }],
+    });
+    expect(http.calls[1].options.qs?.query).toBe(
+      JSON.stringify({ and: [{ fieldName: 'TableId', operator: '=', value: 'guid-1' }] }),
+    );
+  });
+
+  it('filters the field names client-side', async () => {
+    const { ctx } = ctxFor(
+      [
+        ok([{ id: 'guid-1', Table: 'Incident' }]),
+        ok([{ id: 'f1', FieldName: 'State' }, { id: 'f2', FieldName: 'ShortDescription' }]),
+      ],
+      { tableName: 'Incident' },
+    );
+
+    await expect(searchFields.call(ctx as ILoadOptionsFunctions, 'desc')).resolves.toEqual({
+      results: [{ name: 'ShortDescription', value: 'ShortDescription' }],
+    });
+  });
+
+  it('offers nothing until a table is selected', async () => {
+    const { ctx, http } = ctxFor([ok([])]);
+
+    await expect(searchFields.call(ctx as ILoadOptionsFunctions)).resolves.toEqual({ results: [] });
+    expect(http.count()).toBe(0);
   });
 });
 
 describe('getFields', () => {
-  it("offers the selected table's fields as options", async () => {
-    const { ctx, http } = ctxFor([ok([{ id: 'f1', FieldName: 'ShortDescription' }])], { tableName: 'Incident' });
+  /** Answers by URL, so the assertion holds however `discoverFields` reaches the registry. */
+  function registryCtx(params: ParamMap) {
+    return ctxWith(
+      makeRoutedHttpStub((url) =>
+        url.includes('FieldDefinition')
+          ? ok([{ id: 'f1', FieldName: 'State' }, { id: 'f2', FieldName: 'AssignmentGroup' }])
+          : ok([{ id: 'guid-1', Table: 'Incident' }]),
+      ),
+      params,
+    );
+  }
+
+  it("offers the selected table's fields as dropdown options", async () => {
+    const { ctx } = registryCtx({ tableName: 'Incident' });
 
     await expect(getFields.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([
-      { name: 'ShortDescription', value: 'ShortDescription' },
+      { name: 'AssignmentGroup', value: 'AssignmentGroup' },
+      { name: 'State', value: 'State' },
     ]);
-    expect(http.calls[0].options.qs?.query).toBe(
-      JSON.stringify({ and: [{ fieldName: 'Table', operator: '=', value: 'Incident' }] }),
-    );
   });
 
   it('offers nothing until a table is selected', async () => {
@@ -189,9 +263,9 @@ describe('getFields', () => {
 
 describe('record pickers', () => {
   it('labels records by the first populated label field', async () => {
-    const { ctx, http } = ctxFor([ok([{ id: 'r1', Number: 'INC001' }])], { tableName: 'Incident' });
+    const { ctx, http } = ctxFor([ok([{ id: 'r1', Number: 'INC001' }])], { parentTable: 'Incident' });
 
-    const result = await searchObjectRecords.call(ctx as ILoadOptionsFunctions);
+    const result = await searchParentRecords.call(ctx as ILoadOptionsFunctions);
 
     expect(http.calls[0].options.url).toBe('/v1/Incident');
     expect(http.calls[0].options.qs).toEqual({ page: 1, page_size: 100 });
@@ -200,28 +274,28 @@ describe('record pickers', () => {
 
   it('unwraps a displayValue object as the label', async () => {
     const { ctx } = ctxFor([ok([{ id: 'r1', Name: { value: 'g1', displayValue: 'Service Desk' } }])], {
-      tableName: 'Incident',
+      parentTable: 'Incident',
     });
 
-    const result = await searchObjectRecords.call(ctx as ILoadOptionsFunctions);
+    const result = await searchParentRecords.call(ctx as ILoadOptionsFunctions);
 
     expect(result.results).toEqual([{ name: 'Service Desk', value: 'r1' }]);
   });
 
   it('falls back to the id when no label field is populated', async () => {
-    const { ctx } = ctxFor([ok([{ id: 'r1', State: 'Open' }])], { tableName: 'Incident' });
+    const { ctx } = ctxFor([ok([{ id: 'r1', State: 'Open' }])], { parentTable: 'Incident' });
 
-    const result = await searchObjectRecords.call(ctx as ILoadOptionsFunctions);
+    const result = await searchParentRecords.call(ctx as ILoadOptionsFunctions);
 
     expect(result.results).toEqual([{ name: 'r1', value: 'r1' }]);
   });
 
   it('filters on the value as well as the label', async () => {
     const { ctx } = ctxFor([ok([{ id: 'abc', Number: 'INC001' }, { id: 'xyz', Number: 'INC002' }])], {
-      tableName: 'Incident',
+      parentTable: 'Incident',
     });
 
-    const result = await searchObjectRecords.call(ctx as ILoadOptionsFunctions, 'XY');
+    const result = await searchParentRecords.call(ctx as ILoadOptionsFunctions, 'XY');
 
     expect(result.results).toEqual([{ name: 'INC002', value: 'xyz' }]);
   });
@@ -229,7 +303,7 @@ describe('record pickers', () => {
   it('returns nothing when no table is selected yet', async () => {
     const { ctx, http } = ctxFor([ok([])]);
 
-    await expect(searchObjectRecords.call(ctx as ILoadOptionsFunctions)).resolves.toEqual({ results: [] });
+    await expect(searchParentRecords.call(ctx as ILoadOptionsFunctions)).resolves.toEqual({ results: [] });
     expect(http.count()).toBe(0);
   });
 
@@ -275,44 +349,44 @@ describe('searchQueues', () => {
 
 describe('picker pagination', () => {
   it('hands back a token for the next page when the page came back full', async () => {
-    const { ctx } = ctxFor([ok(fullPage(PICKER_PAGE_SIZE))], { tableName: 'Incident' });
+    const { ctx } = ctxFor([ok(fullPage(PICKER_PAGE_SIZE))], { parentTable: 'Incident' });
 
-    const result = await searchObjectRecords.call(ctx as ILoadOptionsFunctions);
+    const result = await searchParentRecords.call(ctx as ILoadOptionsFunctions);
 
     expect(result.results).toHaveLength(PICKER_PAGE_SIZE);
     expect(result.paginationToken).toBe('2');
   });
 
   it('omits the token once a short page ends the table', async () => {
-    const { ctx } = ctxFor([ok(fullPage(PICKER_PAGE_SIZE - 1))], { tableName: 'Incident' });
+    const { ctx } = ctxFor([ok(fullPage(PICKER_PAGE_SIZE - 1))], { parentTable: 'Incident' });
 
-    const result = await searchObjectRecords.call(ctx as ILoadOptionsFunctions);
+    const result = await searchParentRecords.call(ctx as ILoadOptionsFunctions);
 
     expect(result.paginationToken).toBeUndefined();
   });
 
   it('requests the page the token names and advances it', async () => {
-    const { ctx, http } = ctxFor([ok(fullPage(PICKER_PAGE_SIZE))], { tableName: 'Incident' });
+    const { ctx, http } = ctxFor([ok(fullPage(PICKER_PAGE_SIZE))], { parentTable: 'Incident' });
 
-    const result = await searchObjectRecords.call(ctx as ILoadOptionsFunctions, undefined, '3');
+    const result = await searchParentRecords.call(ctx as ILoadOptionsFunctions, undefined, '3');
 
     expect(http.calls[0].options.qs).toEqual({ page: 3, page_size: PICKER_PAGE_SIZE });
     expect(result.paginationToken).toBe('4');
   });
 
   it('keeps paging when a filter empties a full page', async () => {
-    const { ctx } = ctxFor([ok(fullPage(PICKER_PAGE_SIZE))], { tableName: 'Incident' });
+    const { ctx } = ctxFor([ok(fullPage(PICKER_PAGE_SIZE))], { parentTable: 'Incident' });
 
-    const result = await searchObjectRecords.call(ctx as ILoadOptionsFunctions, 'no-such-record');
+    const result = await searchParentRecords.call(ctx as ILoadOptionsFunctions, 'no-such-record');
 
     expect(result.results).toEqual([]);
     expect(result.paginationToken).toBe('2');
   });
 
   it('restarts at page 1 on a token it cannot read', async () => {
-    const { ctx, http } = ctxFor([ok([{ id: 'r1' }])], { tableName: 'Incident' });
+    const { ctx, http } = ctxFor([ok([{ id: 'r1' }])], { parentTable: 'Incident' });
 
-    await searchObjectRecords.call(ctx as ILoadOptionsFunctions, undefined, 'not-a-page');
+    await searchParentRecords.call(ctx as ILoadOptionsFunctions, undefined, 'not-a-page');
 
     expect(http.calls[0].options.qs).toMatchObject({ page: 1 });
   });

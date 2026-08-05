@@ -250,11 +250,31 @@ describe('toCriterion', () => {
       value: '',
     });
   });
+
+  it('resolves a Field locator to the field name it holds', () => {
+    expect(
+      toCriterion({ fieldName: { __rl: true, mode: 'list', value: 'State' }, operator: EQUALS_UI_VALUE, value: 'Open' }),
+    ).toEqual({ fieldName: 'State', operator: '=', value: 'Open' });
+
+    expect(
+      toCriterion({
+        fieldName: { __rl: true, mode: 'name', value: ' Requestor.Email ' },
+        operator: 'contains',
+        value: 'x',
+      }),
+    ).toEqual({ fieldName: 'Requestor.Email', operator: 'contains', value: 'x' });
+  });
 });
 
 describe('buildAndQuery', () => {
   it('ignores rows with no field name', () => {
     expect(buildAndQuery([{ fieldName: '', operator: 'contains', value: 'x' }])).toBeUndefined();
+  });
+
+  it('ignores rows whose Field locator is still empty', () => {
+    expect(
+      buildAndQuery([{ fieldName: { __rl: true, mode: 'list', value: '' }, operator: 'contains', value: 'x' }]),
+    ).toBeUndefined();
   });
 
   it('combines rows under `and`', () => {
@@ -304,6 +324,23 @@ describe('buildSelectors / buildListQuery', () => {
     });
 
     expect(buildSelectors(ctx)).toEqual({ fields: 'id,Number', relations: 'Requestor.Name' });
+  });
+
+  it('joins the field dropdowns, which hand over an array', () => {
+    const ctx = makeExecuteCtx({
+      params: {
+        'options.fields': ['id', 'Number'],
+        'options.displayValues': ['Requestor'],
+      },
+    });
+
+    expect(buildSelectors(ctx)).toEqual({ fields: 'id,Number', displayValues: 'Requestor' });
+  });
+
+  it('trims a typed or expression-supplied list and drops its empty entries', () => {
+    const ctx = makeExecuteCtx({ params: { 'options.fields': ' id , Number ,, ', 'options.displayValues': [] } });
+
+    expect(buildSelectors(ctx)).toEqual({ fields: 'id,Number' });
   });
 
   it('adds sort direction and a JSON-encoded query', () => {

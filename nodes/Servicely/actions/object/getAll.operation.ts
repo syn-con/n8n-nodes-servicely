@@ -8,7 +8,7 @@ import {
 
 import {
   buildListQuery,
-  locator,
+  locatorLabel,
   servicelyApiRequest,
   servicelyApiRequestAllItems,
   toRecordList,
@@ -31,7 +31,7 @@ const properties: INodeProperties[] = [
 export const description = updateDisplayOptions({ show: { resource: ['object'], operation: ['getAll'] } }, properties);
 
 export async function execute(this: IExecuteFunctions, index: number): Promise<INodeExecutionData[]> {
-  const endpoint = `/v1/${locator(this, 'tableName', index)}`;
+  const endpoint = `/v1/${locatorLabel(this, 'tableName', index)}`;
   const qs = buildListQuery(this, index);
   const pairedItem = { item: index };
 

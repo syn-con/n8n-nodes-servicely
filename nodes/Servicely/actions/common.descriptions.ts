@@ -13,10 +13,12 @@ import { EQUALS_UI_VALUE, DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT_MS, QUERY_OPERATO
 // ---------------------------------------------------------------------------
 
 /**
- * Every reference (table, record, queue, action) is a `resourceLocator`: the
- * "From List" mode loads options dynamically, while a second mode accepts a raw
- * name/id or an expression. This is n8n's native manual-vs-ID toggle, so no
- * bespoke switch is needed.
+ * A reference the user picks from the instance (table, parent record, attachment,
+ * queue, action) is a `resourceLocator`: the "From List" mode loads options
+ * dynamically, while a second mode accepts a raw name/id or an expression. This
+ * is n8n's native manual-vs-ID toggle, so no bespoke switch is needed. The one
+ * reference that is not a locator is the Object operations' Record ID — see
+ * `recordIdProperty` for why.
  */
 
 interface TableLocatorConfig {
@@ -52,6 +54,25 @@ export function tableResourceLocator(config: TableLocatorConfig): INodePropertie
         placeholder: 'Incident',
       },
     ],
+  };
+}
+
+/**
+ * A record id typed by hand or arriving from an expression. The Object
+ * operations that address one record (Get / Update / Delete) take this rather
+ * than a picker: their table is arbitrary, so a "From List" mode would page
+ * through whatever table is selected to find an id the upstream node already
+ * has, and every practical workflow feeds `{{ $json.id }}` in anyway.
+ */
+export function recordIdProperty(description: string): INodeProperties {
+  return {
+    displayName: 'Record ID',
+    name: 'recordId',
+    type: 'string',
+    default: '',
+    required: true,
+    description,
+    placeholder: 'e.g. c0a80101-...',
   };
 }
 
@@ -131,25 +152,50 @@ export function searchResourceLocator(config: SearchLocatorConfig): INodePropert
 // Field references
 // ---------------------------------------------------------------------------
 
+interface FieldLocatorConfig {
+  name: string;
+  description: string;
+  /** Placeholder for the manual mode (e.g. `ShortDescription`). */
+  placeholder: string;
+}
+
 /**
- * A Field reference: the fields of the selected `tableName`, loaded from the
- * instance's `FieldDefinition` registry.
+ * A Field reference: the fields of the selected `tableName`, from the instance's
+ * `FieldDefinition` registry, or a name typed by hand.
  *
- * This is an `options` dropdown rather than a resourceLocator because it is used
- * inside fixedCollection rows, whose stored value is a bare field-name string —
- * a locator's `{mode, value}` object would change the saved shape and break
- * existing workflows. Callers override `name` and `description`; anything not in
- * the list (a dot-walked relation, a field on a table typed by expression) stays
- * enterable by switching the input to an expression.
+ * These locators live inside fixedCollection rows, where n8n stores the whole
+ * `{mode, value}` object and `extractValue` does not reach — `fieldRef` in
+ * GenericFunctions resolves both that shape and the bare strings older workflows
+ * saved, so nothing needs migrating. "By Name" is what covers everything the
+ * registry cannot list: a dot-walked relation, or a field on a table that is
+ * itself set by expression.
  */
-const fieldNameProperty: INodeProperties = {
-  displayName: 'Field Name',
-  name: 'fieldName',
-  type: 'options',
-  typeOptions: { loadOptionsMethod: 'getFields', loadOptionsDependsOn: ['tableName'] },
-  default: '',
-  description: 'Field of the selected table',
-};
+function fieldResourceLocator(config: FieldLocatorConfig): INodeProperties {
+  return {
+    displayName: 'Field Name',
+    name: config.name,
+    type: 'resourceLocator',
+    default: { mode: 'list', value: '' },
+    description: config.description,
+    modes: [
+      {
+        // One table's field list is small, so load it once per table and let n8n
+        // filter client-side rather than re-query per keystroke.
+        displayName: 'From List',
+        name: 'list',
+        type: 'list',
+        typeOptions: { searchListMethod: 'searchFields', searchable: false },
+      },
+      {
+        displayName: 'By Name',
+        name: 'name',
+        type: 'string',
+        hint: 'Enter a field name, a dot-walked relation (e.g. Requestor.Email), or an expression',
+        placeholder: config.placeholder,
+      },
+    ],
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Filters
@@ -200,11 +246,11 @@ export const filtersProperty: INodeProperties = {
       name: 'conditions',
       displayName: 'Condition',
       values: [
-        {
-          ...fieldNameProperty,
+        fieldResourceLocator({
           name: 'fieldName',
-          description: 'Field to filter on, loaded from the selected table. To dot-walk a relation (e.g. Requestor.Email), switch this input to an expression.',
-        },
+          description: 'Field to filter on, picked from the selected table or entered by name',
+          placeholder: 'State',
+        }),
         {
           displayName: 'Operator',
           name: 'operator',
@@ -267,11 +313,11 @@ export const fieldsToSetProperty: INodeProperties = {
       name: 'field',
       displayName: 'Field',
       values: [
-        {
-          ...fieldNameProperty,
+        fieldResourceLocator({
           name: 'name',
-          description: 'Field to write, loaded from the selected table',
-        },
+          description: 'Field to write, picked from the selected table or entered by name',
+          placeholder: 'ShortDescription',
+        }),
         {
           displayName: 'Value',
           name: 'value',
@@ -288,23 +334,42 @@ export const fieldsToSetProperty: INodeProperties = {
 // Options collections
 // ---------------------------------------------------------------------------
 
+/**
+ * Options whose value is a field of the selected table are dropdowns fed by the
+ * instance's `FieldDefinition` registry (`getFields`), not typed lists.
+ *
+ * `loadOptionsDependsOn` names the Table locator's inner `.value`, so changing
+ * the table reloads the list rather than offering the previous table's fields.
+ * `multiOptions` is n8n's only multi-select and can only be filled by a
+ * `loadOptions` method, which is why `getFields` exists alongside the
+ * `searchFields` listSearch behind the Field locators.
+ *
+ * A registry that cannot be read — or a table set by an expression, which design
+ * time cannot resolve — leaves the dropdown empty; the parameter can then be
+ * switched to an expression to name fields directly.
+ */
+const FIELD_DROPDOWN = {
+  loadOptionsMethod: 'getFields',
+  loadOptionsDependsOn: ['tableName.value'],
+};
+
 /** Entries valid on any read: which fields come back and how they are expanded. */
 const SELECTOR_OPTIONS: INodeProperties[] = [
   {
     displayName: 'Fields',
     name: 'fields',
-    type: 'string',
-    default: '',
-    placeholder: 'id,Number,ShortDescription',
-    description: 'Comma-separated list of fields to return',
+    type: 'multiOptions',
+    typeOptions: FIELD_DROPDOWN,
+    default: [],
+    description: 'Fields to return. Leave empty for the API default (every field).',
   },
   {
     displayName: 'Display Value Fields',
     name: 'displayValues',
-    type: 'string',
-    default: '',
-    placeholder: 'AssignmentGroup,Requestor',
-    description: 'Comma-separated fields to return as {value, displayValue} objects',
+    type: 'multiOptions',
+    typeOptions: FIELD_DROPDOWN,
+    default: [],
+    description: 'Reference fields to return as {value, displayValue} objects',
   },
   {
     displayName: 'Relation Fields',
@@ -312,7 +377,8 @@ const SELECTOR_OPTIONS: INodeProperties[] = [
     type: 'string',
     default: '',
     placeholder: 'Requestor.Name,Requestor.Manager.Name',
-    description: 'Comma-separated dot-walked relation fields to expand',
+    description:
+      "Comma-separated dot-walked relation fields to expand. Stays a typed list: the registry holds one table's own fields, and a relation path walks through other tables.",
   },
 ];
 
@@ -328,9 +394,9 @@ const LIST_ONLY_OPTIONS: INodeProperties[] = [
   {
     displayName: 'Sort Field',
     name: 'sortField',
-    type: 'string',
+    type: 'options',
+    typeOptions: FIELD_DROPDOWN,
     default: '',
-    placeholder: 'CreatedOn',
     description: 'Field to sort by',
   },
   {

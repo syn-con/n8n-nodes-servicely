@@ -27,19 +27,45 @@ import type { FilterCondition, QueryCriterion, QueryOperator, ServicelyQuery } f
  */
 export type ServicelyContext = IExecuteFunctions | ILoadOptionsFunctions | IPollFunctions;
 
-/** Field-value pair emitted by the `fieldsToSet` fixedCollection. */
+/**
+ * Field-value pair emitted by the `fieldsToSet` fixedCollection. `name` is a
+ * Field locator, so it is either the raw `{__rl, mode, value}` object or a plain
+ * string (see `fieldRef`).
+ */
 interface FieldEntry {
-  name: string;
+  name: string | IDataObject;
   value: string;
+}
+
+/** Read a plain string parameter (a record id typed by hand or from an expression). */
+export function stringParam(ctx: IExecuteFunctions, name: string, index: number): string {
+  return String(ctx.getNodeParameter(name, index, '') ?? '').trim();
 }
 
 /** Read a resourceLocator's resolved value (table name, record id, ...). */
 export function locator(ctx: IExecuteFunctions, name: string, index: number): string {
-  if (name === 'tableName') {
-    const param = ctx.getNodeParameter(name, index, '', { extractValue: false }) as IDataObject;
-    return param.cachedResultName as string;
-  }
   return ctx.getNodeParameter(name, index, '', { extractValue: true }) as string;
+}
+export function locatorLabel(ctx: IExecuteFunctions, name: string, index: number): string {
+  const label = ctx.getNodeParameter(name, index, '', { extractValue: false }) as IDataObject;
+  if (label.cachedResultName) {
+    return String(label.cachedResultName).trim();
+  }
+  return String(label.value).trim();
+}
+
+/**
+ * A field reference stored in a fixedCollection row. n8n's `extractValue` does
+ * not reach inside collections, so a Field locator arrives as its raw
+ * `{__rl, mode, value}` object; rows saved before the locator existed (and
+ * anything coming from an expression) arrive as a plain string. Both resolve to
+ * the same field name here, so no workflow needs migrating.
+ */
+export function fieldRef(value: unknown): string {
+  if (value !== null && typeof value === 'object') {
+    return String((value as IDataObject).value ?? '').trim();
+  }
+  return value === null || value === undefined ? '' : String(value).trim();
 }
 
 /** Collapse the `fieldsToSet` rows into the record body to write. */
@@ -47,8 +73,9 @@ export function fieldsToSet(ctx: IExecuteFunctions, index: number): IDataObject 
   const entries = ctx.getNodeParameter('fieldsToSet.field', index, []) as FieldEntry[];
   const data: IDataObject = {};
   for (const entry of entries) {
-    if (entry.name) {
-      data[entry.name] = entry.value;
+    const name = fieldRef(entry.name);
+    if (name) {
+      data[name] = entry.value;
     }
   }
   return data;
@@ -348,7 +375,7 @@ export function parseList(input: unknown): string[] {
 
 /** Convert one simple-mode filter row into a query criterion. */
 export function toCriterion(condition: FilterCondition): QueryCriterion {
-  const { fieldName } = condition;
+  const fieldName = fieldRef(condition.fieldName);
   // Only Equals is aliased in the UI (see EQUALS_UI_VALUE).
   const operator = (condition.operator === EQUALS_UI_VALUE ? '=' : condition.operator) as QueryOperator;
 
@@ -363,7 +390,7 @@ export function toCriterion(condition: FilterCondition): QueryCriterion {
 
 /** Build an AND query from simple filter rows, ignoring rows with no field. */
 export function buildAndQuery(conditions: FilterCondition[]): ServicelyQuery | undefined {
-  const criteria = conditions.filter((condition) => condition.fieldName).map(toCriterion);
+  const criteria = conditions.filter((condition) => fieldRef(condition.fieldName)).map(toCriterion);
   return criteria.length > 0 ? { and: criteria } : undefined;
 }
 
@@ -386,13 +413,28 @@ export function parseAdvancedQuery(raw: string | IDataObject | undefined): Servi
 }
 
 /**
+ * One selector as the API takes it: a comma-separated list. The Fields and
+ * Display Value Fields dropdowns hand over an array of field names, while
+ * Relation Fields — and every workflow saved before those dropdowns existed, or
+ * any of the three driven by an expression — hands over a string, so both shapes
+ * collapse here and nothing needs migrating.
+ */
+function selectorList(value: unknown): string {
+  const parts = Array.isArray(value) ? value : String(value ?? '').split(',');
+  return parts
+    .map((part) => String(part).trim())
+    .filter((part) => part !== '')
+    .join(',');
+}
+
+/**
  * Field / display-value / relation selectors from the Options collection. Valid
  * on both single-record and list GETs.
  */
 export function buildSelectors(ctx: ServicelyContext, itemIndex = 0): IDataObject {
   const qs: IDataObject = {};
   for (const option of ['fields', 'displayValues', 'relations'] as const) {
-    const value = nodeParameter(ctx, `options.${option}`, '', itemIndex);
+    const value = selectorList(nodeParameter<unknown>(ctx, `options.${option}`, '', itemIndex));
     if (value) {
       qs[option] = value;
     }
@@ -408,7 +450,7 @@ export function buildSelectors(ctx: ServicelyContext, itemIndex = 0): IDataObjec
 export function buildListQuery(ctx: ServicelyContext, itemIndex = 0): IDataObject {
   const qs = buildSelectors(ctx, itemIndex);
 
-  const sortField = nodeParameter(ctx, 'options.sortField', '', itemIndex);
+  const sortField = String(nodeParameter(ctx, 'options.sortField', '', itemIndex) ?? '').trim();
   if (sortField) {
     const descending = nodeParameter(ctx, 'options.sortDescending', false, itemIndex);
     qs[descending ? 'order_desc' : 'order'] = sortField;

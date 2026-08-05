@@ -100,4 +100,20 @@ describe('versionDescription', () => {
       }
     }
   });
+
+  it('only references loadOptions methods that exist', () => {
+    // The field dropdowns sit inside the Options collections, so this walks
+    // nested option properties too rather than the top level alone.
+    const walk = (properties: INodeProperties[]) => {
+      for (const property of properties) {
+        const method = property.typeOptions?.loadOptionsMethod;
+        if (method) {
+          expect(listSearchMethods.loadOptions, property.name).toHaveProperty(method);
+        }
+        walk((property.options ?? []).filter((option): option is INodeProperties => 'name' in option && 'type' in option));
+      }
+    };
+
+    walk(versionDescription.properties);
+  });
 });

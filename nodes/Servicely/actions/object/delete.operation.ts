@@ -5,17 +5,10 @@ import {
   updateDisplayOptions,
 } from 'n8n-workflow';
 
-import { locator, servicelyApiRequest } from '../../GenericFunctions';
-import { recordResourceLocator } from '../common.descriptions';
+import { locatorLabel, servicelyApiRequest, stringParam } from '../../GenericFunctions';
+import { recordIdProperty } from '../common.descriptions';
 
-const properties: INodeProperties[] = [
-  recordResourceLocator({
-    name: 'recordId',
-    displayName: 'Record',
-    description: 'The record to delete',
-    searchListMethod: 'searchObjectRecords',
-  }),
-];
+const properties: INodeProperties[] = [recordIdProperty('ID of the record to delete')];
 
 export const description = updateDisplayOptions(
   { show: { resource: ['object'], operation: ['delete'] } },
@@ -23,9 +16,10 @@ export const description = updateDisplayOptions(
 );
 
 export async function execute(this: IExecuteFunctions, index: number): Promise<INodeExecutionData[]> {
-  const table = locator(this, 'tableName', index);
-  const id = locator(this, 'recordId', index);
+  const table = locatorLabel(this, 'tableName', index);
+  const id = stringParam(this, 'recordId', index);
   await servicelyApiRequest.call(this, 'DELETE', `/v1/${table}/${id}`);
 
   return [{ json: { success: true, table, id }, pairedItem: { item: index } }];
 }
+
