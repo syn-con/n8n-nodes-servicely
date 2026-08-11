@@ -5,6 +5,7 @@ import {
   discoverFields,
   discoverTables,
   getAiAgents,
+  getAiAssistants,
   getFields,
   listSearchMethods,
   searchActions,
@@ -60,7 +61,11 @@ describe('listSearchMethods', () => {
   });
 
   it('exposes every loadOptions method the descriptions reference', () => {
-    expect(Object.keys(listSearchMethods.loadOptions).sort()).toEqual(['getAiAgents', 'getFields']);
+    expect(Object.keys(listSearchMethods.loadOptions).sort()).toEqual([
+      'getAiAgents',
+      'getAiAssistants',
+      'getFields',
+    ]);
   });
 });
 
@@ -299,6 +304,31 @@ describe('getAiAgents', () => {
     const { ctx } = ctxFor([{ status: 500, body: { message: 'boom' } }]);
 
     await expect(getAiAgents.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([]);
+  });
+});
+
+// The assistant registry is read exactly as the agent one is, from its own table.
+describe('getAiAssistants', () => {
+  it('reads SystemAIAssistant, labelling by Name and storing the row id, sorted', async () => {
+    const { ctx, http } = ctxFor([
+      ok([
+        { id: 's1', Name: 'Service Desk Assistant' },
+        { id: 's2', Name: 'Approvals Assistant' },
+      ]),
+    ]);
+
+    await expect(getAiAssistants.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([
+      { name: 'Approvals Assistant', value: 's2' },
+      { name: 'Service Desk Assistant', value: 's1' },
+    ]);
+    expect(http.calls[0].options.url).toBe('/v1/SystemAIAssistant');
+    expect(http.calls[0].options.qs).toEqual({ page: 1, page_size: DISCOVERY_PAGE_SIZE });
+  });
+
+  it('leaves the list empty on an instance without the table', async () => {
+    const { ctx } = ctxFor([{ status: 404, body: {} }]);
+
+    await expect(getAiAssistants.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([]);
   });
 });
 

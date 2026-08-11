@@ -46,11 +46,21 @@ const PARAMETER_ORDER_STEP = 10;
 /** A tool has a handful of parameters, so one page is always the whole set. */
 const PARAMETER_PAGE_SIZE = 200;
 
-/** Table holding the AI agents a tool can be exported to. */
-const AGENT_TABLE = 'SystemAIAgent';
+/** The field listing the tools a holder may call, on both registries. */
+const HOLDER_TOOLS_FIELD = 'Tools';
 
-/** The agent field listing the tools that agent may call. */
-const AGENT_TOOLS_FIELD = 'Tools';
+/**
+ * What a tool can be exported to: an AI agent, or an AI assistant. The two behave
+ * identically — a registry of records whose `Tools` array names the tools they may
+ * call, selected on the node by record id — so they are described rather than
+ * written out twice, and adding a third would be one more entry here.
+ */
+const TOOL_HOLDERS = [
+	{ noun: 'agent', table: 'SystemAIAgent', option: 'aiAgents' },
+	{ noun: 'assistant', table: 'SystemAIAssistant', option: 'aiAssistants' },
+] as const;
+
+type ToolHolder = (typeof TOOL_HOLDERS)[number];
 
 /** Marks a tool record as maintained by n8n rather than edited in the service desk. */
 const NAME_PREFIX = '[n8n]';
@@ -363,32 +373,34 @@ async function syncParameters(
 }
 
 /**
- * Exporting the tool to agents. The link lives on the *agent*: a `SystemAIAgent`
- * carries a `Tools` array, so selecting agents on the node means adding the tool's
- * id to theirs, and deselecting one means taking it out again.
+ * Exporting the tool to its holders. The link lives on the *holder*: a
+ * `SystemAIAgent` or `SystemAIAssistant` carries a `Tools` array, so selecting one
+ * on the node means adding the tool's id to theirs, and deselecting it means taking
+ * it out again.
  *
- * The whole agent table is read once per registration and the two sides are worked
- * out from it. That is exact — it never has to guess how an instance serialises the
- * array to match on it — and it costs the one request that querying only the
- * selected agents would have cost anyway, while also answering the question the
- * selection cannot: which agents still hold a tool nobody selected any more.
+ * Each registry is read once per registration and both sides are worked out from
+ * it. That is exact — it never has to guess how an instance serialises the array to
+ * match on it — and it costs the one request that querying only the selected records
+ * would have cost anyway, while also answering the question the selection cannot:
+ * which holders still hold a tool nobody selected any more.
  */
 
-/** The agents the node exports this tool to, as record ids. */
-function selectedAgentIds(ctx: IHookFunctions): string[] {
-	const { aiAgents } = ctx.getNodeParameter('options', {}) as { aiAgents?: string[] };
-	return parseList(aiAgents ?? []);
+/** The records of one registry the node exports this tool to, as ids. */
+function selectedIds(ctx: IHookFunctions, holder: ToolHolder): string[] {
+	const options = ctx.getNodeParameter('options', {}) as Record<string, unknown>;
+	return parseList(options[holder.option] ?? []);
 }
 
 /**
- * Every agent the instance has. A 404 is "none": the API answers a query that
- * matched nothing that way, and an instance with no agent table has none either.
+ * Every record one registry has. A 404 is "none": the API answers a query that
+ * matched nothing that way, and an instance without the table has none either —
+ * which is also how an instance too old to know about assistants reads.
  */
-async function listAgents(ctx: IHookFunctions): Promise<ServicelyRecord[]> {
+async function listHolders(ctx: IHookFunctions, holder: ToolHolder): Promise<ServicelyRecord[]> {
 	try {
 		return (await servicelyApiRequestAllItems.call(
 			ctx,
-			`/v1/${AGENT_TABLE}`,
+			`/v1/${holder.table}`,
 		)) as ServicelyRecord[];
 	} catch (error) {
 		if (isNotFound(error as IDataObject)) {
@@ -399,13 +411,13 @@ async function listAgents(ctx: IHookFunctions): Promise<ServicelyRecord[]> {
 }
 
 /**
- * The tool ids an agent's `Tools` field holds. The field is an array, but what an
+ * The tool ids a holder's `Tools` field holds. The field is an array, but what an
  * instance puts in it varies — bare ids, or references carrying one — and a field
  * never written comes back absent. Everything is read as a string id, so the
  * comparison against the tool is the same in every case.
  */
-function agentTools(agent: ServicelyRecord): string[] {
-	const value = agent[AGENT_TOOLS_FIELD];
+function holderTools(record: ServicelyRecord): string[] {
+	const value = record[HOLDER_TOOLS_FIELD];
 	if (!Array.isArray(value)) {
 		// A single reference, or a serialised list — parseList reads all of those
 		return parseList(value);
@@ -421,58 +433,62 @@ function agentTools(agent: ServicelyRecord): string[] {
 }
 
 /**
- * Writes an agent's `Tools` back. A 404 is that agent going away between the read
+ * Writes a holder's `Tools` back. A 404 is that record going away between the read
  * and the write — the next activation links it again if it comes back, and failing
- * the activation over an agent that is gone would help nobody.
+ * the activation over a record that is gone would help nobody.
  */
-async function writeAgentTools(
+async function writeHolderTools(
 	ctx: IHookFunctions,
-	agent: ServicelyRecord,
+	holder: ToolHolder,
+	record: ServicelyRecord,
 	tools: string[],
 ): Promise<void> {
-	const id = String(agent.id);
+	const id = String(record.id);
 	try {
-		await servicelyApiRequest.call(ctx, 'PATCH', `/v1/${AGENT_TABLE}/${id}`, {
-			[AGENT_TOOLS_FIELD]: tools,
+		await servicelyApiRequest.call(ctx, 'PATCH', `/v1/${holder.table}/${id}`, {
+			[HOLDER_TOOLS_FIELD]: tools,
 		});
 	} catch (error) {
 		if (!isNotFound(error as IDataObject)) {
 			throw error;
 		}
-		ctx.logger.warn(`The Servicely AI agent ${id} is no longer there`);
+		ctx.logger.warn(`The Servicely AI ${holder.noun} ${id} is no longer there`);
 	}
 }
 
-/** Adds the tool to the agents that should have it. One PATCH per agent that gains it. */
-async function linkAgents(
+/** Adds the tool to the records that should have it. One PATCH per record that gains it. */
+async function link(
 	ctx: IHookFunctions,
+	holder: ToolHolder,
 	toolId: string,
-	agents: ServicelyRecord[],
+	records: ServicelyRecord[],
 ): Promise<void> {
-	/* eslint-disable no-await-in-loop -- one agent at a time, so a partial failure
+	/* eslint-disable no-await-in-loop -- one record at a time, so a partial failure
 	   reads in order in the log; the sets are small and the two tasks run in parallel */
-	for (const agent of agents) {
-		const tools = agentTools(agent);
+	for (const record of records) {
+		const tools = holderTools(record);
 		if (!tools.includes(toolId)) {
-			await writeAgentTools(ctx, agent, [...tools, toolId]);
+			await writeHolderTools(ctx, holder, record, [...tools, toolId]);
 		}
 	}
 	/* eslint-enable no-await-in-loop */
 }
 
-/** Takes the tool out of the agents that should not have it, and only those. */
-async function unlinkAgents(
+/** Takes the tool out of the records that should not have it, and only those. */
+async function unlink(
 	ctx: IHookFunctions,
+	holder: ToolHolder,
 	toolId: string,
-	agents: ServicelyRecord[],
+	records: ServicelyRecord[],
 ): Promise<void> {
-	/* eslint-disable no-await-in-loop -- see linkAgents */
-	for (const agent of agents) {
-		const tools = agentTools(agent);
+	/* eslint-disable no-await-in-loop -- see link */
+	for (const record of records) {
+		const tools = holderTools(record);
 		if (tools.includes(toolId)) {
-			await writeAgentTools(
+			await writeHolderTools(
 				ctx,
-				agent,
+				holder,
+				record,
 				tools.filter((id) => id !== toolId),
 			);
 		}
@@ -481,17 +497,18 @@ async function unlinkAgents(
 }
 
 /**
- * Brings the agents' `Tools` in line with the node's selection: the selected
- * agents gain the tool, everyone else loses it. An agent already in the state it
- * should be in is not written, so re-activating an unchanged workflow patches
- * nothing.
+ * Brings one registry's `Tools` in line with the node's selection for it: the
+ * selected records gain the tool, everyone else loses it. A record already in the
+ * state it should be in is not written, so re-activating an unchanged workflow
+ * patches nothing.
  *
- * Linking and unlinking are two tasks over two disjoint sets of agents, so they
- * never write the same record and run at the same time. An empty selection is the
- * deregistration case: nothing to link, and the tool comes out of every agent.
+ * Linking and unlinking are two tasks over two disjoint sets of records, so they
+ * never write the same one and run at the same time. An empty selection is the
+ * deregistration case: nothing to link, and the tool comes out of every record.
  */
-async function syncAgentLinks(
+async function syncHolderLinks(
 	ctx: IHookFunctions,
+	holder: ToolHolder,
 	toolId: string,
 	selected: string[],
 ): Promise<void> {
@@ -499,11 +516,20 @@ async function syncAgentLinks(
 	const chosen: ServicelyRecord[] = [];
 	const rest: ServicelyRecord[] = [];
 
-	for (const agent of await listAgents(ctx)) {
-		(wanted.has(String(agent.id)) ? chosen : rest).push(agent);
+	for (const record of await listHolders(ctx, holder)) {
+		(wanted.has(String(record.id)) ? chosen : rest).push(record);
 	}
 
-	await Promise.all([linkAgents(ctx, toolId, chosen), unlinkAgents(ctx, toolId, rest)]);
+	await Promise.all([link(ctx, holder, toolId, chosen), unlink(ctx, holder, toolId, rest)]);
+}
+
+/** Every registry reconciled against what the node selects in it, all at once. */
+function syncAllHolderLinks(
+	ctx: IHookFunctions,
+	toolId: string,
+	selection: (holder: ToolHolder) => string[],
+): Array<Promise<void>> {
+	return TOOL_HOLDERS.map((holder) => syncHolderLinks(ctx, holder, toolId, selection(holder)));
 }
 
 /**
@@ -559,13 +585,13 @@ export async function createTool(this: IHookFunctions): Promise<boolean> {
 		});
 	}
 
-	// Two independent tasks against two different tables, so they run together.
-	// `allSettled` and not `all`: whichever fails, the other still finishes rather
-	// than being left half-written while the activation reports the first error.
+	// Independent tasks against separate tables, so they run together. `allSettled`
+	// and not `all`: whichever fails, the others still finish rather than being left
+	// half-written while the activation reports the first error.
 	const definitions = readParameterDefinitions(this);
 	const outcomes = await Promise.allSettled([
 		syncParameters(this, toolId, definitions),
-		syncAgentLinks(this, toolId, selectedAgentIds(this)),
+		...syncAllHolderLinks(this, toolId, (holder) => selectedIds(this, holder)),
 	]);
 	const failure = outcomes.find((outcome) => outcome.status === 'rejected');
 	if (failure?.status === 'rejected') {
@@ -603,14 +629,15 @@ export async function deleteTool(this: IHookFunctions): Promise<boolean> {
 			return true;
 		}
 
-		// Unlink before deleting, so no agent is left pointing at a record that is
-		// about to go. A failure here must not keep the tool registered, so the
-		// delete goes ahead either way.
+		// Unlink before deleting, so no agent or assistant is left pointing at a record
+		// that is about to go. A failure here must not keep the tool registered, so
+		// the delete goes ahead either way.
 		try {
-			await syncAgentLinks(this, String(existing.id), []);
+			// An empty selection everywhere: the tool comes out of every registry
+			await Promise.all(syncAllHolderLinks(this, String(existing.id), () => []));
 		} catch (error) {
 			const { message } = error as Error;
-			this.logger.warn(`Could not unlink the Servicely AI Tool from its agents: ${message}`);
+			this.logger.warn(`Could not unlink the Servicely AI Tool from its holders: ${message}`);
 		}
 
 		await servicelyApiRequest.call(this, 'DELETE', `/v1/${TOOL_TABLE}/${String(existing.id)}`);

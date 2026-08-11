@@ -7,7 +7,7 @@ import {
 	NodeConnectionTypes,
 } from 'n8n-workflow';
 
-import { getAiAgents } from '../Servicely/SearchFunctions';
+import { getAiAgents, getAiAssistants } from '../Servicely/SearchFunctions';
 import {
 	type AuthenticationResult,
 	AUTH_CREDENTIAL_NAME,
@@ -289,6 +289,18 @@ export class ServicelyAITool implements INodeType {
 							"The Servicely AI agents this tool is exported to. The list shows SystemAIAgent records by Name; each agent is stored by its record ID. Activating the workflow adds the tool to those agents' Tools, and takes it out of the agents you deselect — so leaving this out unlinks the tool from every agent.",
 					},
 					{
+						displayName: 'AI Assistants',
+						name: 'aiAssistants',
+						type: 'multiOptions',
+						noDataExpression: true,
+						typeOptions: {
+							loadOptionsMethod: 'getAiAssistants',
+						},
+						default: [],
+						description:
+							"The Servicely AI assistants this tool is exported to, the same way as the agents above: SystemAIAssistant records by Name, stored by record ID, and reconciled against their Tools on activation.",
+					},
+					{
 						displayName: 'Allow Unknown Parameters',
 						name: 'allowUnknownParameters',
 						type: 'boolean',
@@ -327,8 +339,8 @@ export class ServicelyAITool implements INodeType {
 
 
 
-	/** Only the agent loader: the pickers of the Servicely node have no counterpart here. */
-	methods = { loadOptions: { getAiAgents } };
+	/** Only the two AI registries: the pickers of the Servicely node have no counterpart here. */
+	methods = { loadOptions: { getAiAgents, getAiAssistants } };
 
 	/** Registers the tool in the service desk on activation, removes it on deactivation. */
 	webhookMethods = toolRegistrationMethods;

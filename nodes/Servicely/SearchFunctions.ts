@@ -177,8 +177,11 @@ const FIELD_NAME_FIELD = 'FieldName';
 /** The instance's AI agents, offered by the AI Tool node's AI Agents selector. */
 const AI_AGENT_TABLE = 'SystemAIAgent';
 
-/** `SystemAIAgent` field holding the agent's display name. */
-const AI_AGENT_NAME_FIELD = 'Name';
+/** The instance's AI assistants, offered by the AI Assistants selector. */
+const AI_ASSISTANT_TABLE = 'SystemAIAssistant';
+
+/** Field holding the display name in both AI registries. */
+const AI_NAME_FIELD = 'Name';
 
 /** These registries are small, so they are read in large pages. */
 const DISCOVERY_PAGE_SIZE = 2000;
@@ -491,36 +494,52 @@ export async function getFields(this: ILoadOptionsFunctions): Promise<INodePrope
 }
 
 /**
- * The instance's AI agents (`SystemAIAgent`), backing the AI Tool node's **AI
- * Agents** multi-select. The stored value is each agent's `Key` — the stable
- * identifier the service desk knows an agent by — while the label is its `Name`.
- * Rows carrying no Key are skipped, since there would be nothing to store.
+ * Every row of a registry as an option labelled by its `Name` and storing its
+ * record id — the id being what a tool's holder is referenced by. Rows with no id
+ * are skipped, since there would be nothing to store, and one that repeats an id
+ * already seen is dropped.
  *
  * A registry that cannot be read leaves the list empty rather than failing the
- * dropdown; the parameter then stays reachable as an expression.
+ * dropdown; the agents and assistants of a tool are optional either way.
  */
-export async function getAiAgents(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+async function recordsByName(
+  ctx: ILoadOptionsFunctions,
+  table: string,
+): Promise<INodePropertyOptions[]> {
   let rows: ServicelyRecord[];
   try {
-    rows = await allRows(this, AI_AGENT_TABLE, DISCOVERY_PAGE_SIZE);
+    rows = await allRows(ctx, table, DISCOVERY_PAGE_SIZE);
   } catch {
     return [];
   }
-  const byKey = new Map<string, INodePropertyOptions>();
+  const byId = new Map<string, INodePropertyOptions>();
   for (const row of rows) {
-    const key = fieldString(row, ID_FIELD)?.trim();
-    if (key === undefined || byKey.has(key)) {
+    const id = fieldString(row, ID_FIELD)?.trim();
+    if (id === undefined || byId.has(id)) {
       continue;
     }
-    byKey.set(key, { name: fieldString(row, AI_AGENT_NAME_FIELD) ?? key, value: key });
+    byId.set(id, { name: fieldString(row, AI_NAME_FIELD) ?? id, value: id });
   }
-  return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The instance's AI agents, backing the AI Tool node's **AI Agents** multi-select. */
+export async function getAiAgents(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+  return recordsByName(this, AI_AGENT_TABLE);
+}
+
+/** The instance's AI assistants, backing the **AI Assistants** multi-select. */
+export async function getAiAssistants(
+  this: ILoadOptionsFunctions,
+): Promise<INodePropertyOptions[]> {
+  return recordsByName(this, AI_ASSISTANT_TABLE);
 }
 
 /** The `methods` block attached to both nodes. */
 export const listSearchMethods = {
   loadOptions: {
     getAiAgents,
+    getAiAssistants,
     getFields,
   },
   listSearch: {

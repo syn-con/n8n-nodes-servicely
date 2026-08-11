@@ -26,16 +26,23 @@ interface HookStubOptions {
 	webhookUrl?: string;
 	params?: IDataObject;
 	/**
-	 * The agent table. Agent requests are answered from here and recorded in
-	 * `agentCalls`, off the positional queue — the agent sync runs alongside the
-	 * parameter sync, so it must not shift what the queue hands the other one.
+	 * The agent table. Requests to either AI registry are answered from here (or
+	 * from `assistants`) and recorded in `agentCalls`, off the positional queue —
+	 * those syncs run alongside the parameter sync, so they must not shift what the
+	 * queue hands it.
 	 */
 	agents?: IDataObject[];
-	/** Status for the agent list, for the cases where the table cannot be read. */
+	/** The assistant table, which behaves exactly as the agent one does. */
+	assistants?: IDataObject[];
+	/** Status for a registry list, for the cases where the table cannot be read. */
 	agentListStatus?: number;
-	/** Status for an agent write, for the case where the agent is no longer there. */
+	/** Status for a registry write, for the case where the record is no longer there. */
 	agentWriteStatus?: number;
 }
+
+/** Whether a URL addresses one of the two AI registries. */
+const isAiRegistry = (url: string) =>
+	url.startsWith('/v1/SystemAIAgent') || url.startsWith('/v1/SystemAIAssistant');
 
 interface Call {
 	method: string;
@@ -91,14 +98,17 @@ function makeHookCtx(options: HookStubOptions = {}) {
 
 				sequence.push(`${request.method} ${request.url}`);
 
-				if (request.url.startsWith('/v1/SystemAIAgent')) {
+				if (isAiRegistry(request.url)) {
 					agentCalls.push(call);
 					// A GET lists the table; a PATCH only has to answer
 					const isList = request.method === 'GET';
+					const table = request.url.startsWith('/v1/SystemAIAssistant')
+						? (options.assistants ?? [])
+						: (options.agents ?? []);
 					return {
 						statusCode: (isList ? options.agentListStatus : options.agentWriteStatus) ?? 200,
 						headers: {},
-						body: { data: isList ? (options.agents ?? []) : {} },
+						body: { data: isList ? table : {} },
 					};
 				}
 
@@ -668,13 +678,14 @@ describe('agent links', () => {
 		]);
 	});
 
-	it('reads the whole agent table once, not one query per agent', async () => {
+	it('reads each registry whole, once, not one query per record', async () => {
 		const ctx = ctxFor([agent('a-1', [])], ['a-1']);
 
 		await createTool.call(ctx);
 
-		expect(ctx.agentCalls.filter((call) => call.method === 'GET')).toEqual([
-			expect.objectContaining({ url: '/v1/SystemAIAgent' }),
+		expect(ctx.agentCalls.filter((call) => call.method === 'GET').map((call) => call.url)).toEqual([
+			'/v1/SystemAIAgent',
+			'/v1/SystemAIAssistant',
 		]);
 	});
 
@@ -772,20 +783,71 @@ describe('agent links', () => {
 		expect(ctx.calls[3]).toMatchObject({ method: 'POST', url: '/v1/SystemAIToolParameter' });
 	});
 
-	it('strips the tool from every agent before the record is deleted', async () => {
+	it('strips the tool from every holder before the record is deleted', async () => {
 		const ctx = makeHookCtx({
 			responses: [ok([TOOL]), ok({})],
 			agents: [agent('a-1', ['tool-9'])],
+			assistants: [agent('s-1', ['tool-9', 'other-tool'])],
 		});
 
 		await expect(deleteTool.call(ctx)).resolves.toBe(true);
-		expect(ctx.sequence).toEqual([
-			'GET /v1/SystemAITool',
-			'GET /v1/SystemAIAgent',
-			'PATCH /v1/SystemAIAgent/a-1',
-			'DELETE /v1/SystemAITool/tool-9',
-		]);
-		expect(written(ctx)).toEqual([['/v1/SystemAIAgent/a-1', []]]);
+		expect(written(ctx)).toEqual(
+			expect.arrayContaining([
+				['/v1/SystemAIAgent/a-1', []],
+				['/v1/SystemAIAssistant/s-1', ['other-tool']],
+			]),
+		);
+		// Both writes land before the tool record goes
+		const deleted = ctx.sequence.indexOf('DELETE /v1/SystemAITool/tool-9');
+		expect(deleted).toBeGreaterThan(ctx.sequence.indexOf('PATCH /v1/SystemAIAgent/a-1'));
+		expect(deleted).toBeGreaterThan(ctx.sequence.indexOf('PATCH /v1/SystemAIAssistant/s-1'));
+		expect(ctx.sequence.indexOf('PATCH /v1/SystemAIAssistant/s-1')).toBeGreaterThan(-1);
+	});
+
+	// The assistant registry is the same mechanism against another table, driven by
+	// its own selection.
+	it('links and unlinks assistants from their own selection', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([TOOL]), ok(TOOL), ok([])],
+			agents: [agent('a-1', [])],
+			assistants: [agent('s-1', ['other-tool']), agent('s-2', ['tool-9'])],
+			params: { options: { aiAgents: ['a-1'], aiAssistants: ['s-1'] } },
+		});
+
+		await createTool.call(ctx);
+
+		expect(written(ctx)).toEqual(
+			expect.arrayContaining([
+				['/v1/SystemAIAgent/a-1', ['tool-9']],
+				['/v1/SystemAIAssistant/s-1', ['other-tool', 'tool-9']],
+				['/v1/SystemAIAssistant/s-2', []],
+			]),
+		);
+	});
+
+	it('leaves the assistants alone when only agents are selected', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([TOOL]), ok(TOOL), ok([])],
+			agents: [agent('a-1', [])],
+			assistants: [agent('s-1', ['other-tool'])],
+			params: { options: { aiAgents: ['a-1'] } },
+		});
+
+		await createTool.call(ctx);
+
+		expect(written(ctx)).toEqual([['/v1/SystemAIAgent/a-1', ['tool-9']]]);
+	});
+
+	// An instance too old to have the table reads the same as one with no records.
+	it('carries on when the assistant table is not there', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([TOOL]), ok(TOOL), ok([])],
+			agentListStatus: 404,
+			params: { options: { aiAssistants: ['s-1'] } },
+		});
+
+		await expect(createTool.call(ctx)).resolves.toBe(true);
+		expect(ctx.agentCalls.filter((call) => call.method === 'PATCH')).toEqual([]);
 	});
 
 	it('deletes the tool even when the agents cannot be unlinked', async () => {
