@@ -12,6 +12,12 @@ export interface ParameterDefinition {
 	type: ParameterType;
 	/** What the parameter means, exported with the tool so the agent knows what to send. */
 	description: string;
+	/**
+	 * Exported with the tool like any other parameter, but never rejected: a call
+	 * that leaves it out, or sends another type, still runs. The value is passed on
+	 * when it is there, so the workflow decides what its absence means.
+	 */
+	skipValidation?: boolean;
 }
 
 export interface ValidationError {
@@ -136,6 +142,16 @@ export function validateBody(
 
 	for (const definition of definitions) {
 		const raw = body[definition.key];
+
+		// Declared so the caller knows about it and so it does not count as unknown,
+		// but nothing about it can fail the call
+		if (definition.skipValidation) {
+			if (raw !== undefined && raw !== null) {
+				const value = options.coerceTypes ? coerce(raw, definition.type) : raw;
+				parameters[definition.key] = value as IDataObject[string];
+			}
+			continue;
+		}
 
 		if (raw === undefined || raw === null) {
 			errors.push({

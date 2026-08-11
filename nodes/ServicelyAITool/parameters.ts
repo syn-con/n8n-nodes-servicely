@@ -33,12 +33,16 @@ export const DEFAULT_RESPONSE_TIMEOUT_SECONDS = 60;
  *
  * A node that declares a parameter of the same name replaces it — its own wording
  * for a flag it already knows about beats this one.
+ *
+ * It is exported but not validated: no tool asked for it, so a caller that has not
+ * caught up with the definition is not worth rejecting over it.
  */
 export const PRODUCTION_PARAMETER: ParameterDefinition = {
 	key: 'IsProduction',
 	type: 'boolean',
 	description:
 		'Whether this call is for real. Always send true, unless the user explicitly asked to run in test mode — then send false.',
+	skipValidation: true,
 };
 
 /**
