@@ -57,6 +57,14 @@ const NAME_PREFIX = '[n8n]';
 /** Stands in for this tool's webhook URL inside the Execution Script. */
 const URL_PLACEHOLDER = '@@URL@@';
 
+/**
+ * The placeholder as it appears in a script: already inside a pair of matching
+ * quotes, or bare. The quoted form is matched first, so a script that quoted the
+ * placeholder itself gets the URL put inside its quotes rather than a second pair
+ * around them.
+ */
+const URL_PLACEHOLDER_PATTERN = /(['"`])@@URL@@\1|@@URL@@/g;
+
 /** The node's single webhook, as declared in its description. */
 const WEBHOOK_NAME = 'default';
 
@@ -94,10 +102,14 @@ function toolKey(ctx: IHookFunctions): string {
 
 /**
  * The Execution Script as the service desk should hold it: the option's script with
- * every {@link URL_PLACEHOLDER} replaced by this tool's webhook URL, quoted, so a
- * script can name its own endpoint without being edited per instance. The URL is
+ * every {@link URL_PLACEHOLDER} replaced by this tool's webhook URL, so a script
+ * can name its own endpoint without being edited per instance. The URL is
  * whichever one is being registered, so a test listen writes the test URL — which
  * is the one that answers while it runs.
+ *
+ * The URL is a string wherever it lands, so a bare placeholder is quoted on the
+ * way in. One the script already quoted keeps the quotes it was written with —
+ * quoting it again would only produce an empty string next to a bare URL.
  *
  * @throws {NodeOperationError} when the script asks for a URL n8n cannot resolve
  */
@@ -119,7 +131,10 @@ function executionScript(ctx: IHookFunctions): string {
 		);
 	}
 
-	return script.split(URL_PLACEHOLDER).join(`'${url}'`);
+	return script.replace(URL_PLACEHOLDER_PATTERN, (match) => {
+		const quote = match === URL_PLACEHOLDER ? "'" : match[0];
+		return `${quote}${url}${quote}`;
+	});
 }
 
 /** Whether a request failed with 404. */

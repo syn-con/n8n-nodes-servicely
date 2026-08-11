@@ -225,6 +225,22 @@ describe('create', () => {
 		});
 	});
 
+	it('leaves the quotes alone when the script already quoted the placeholder', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
+			params: {
+				options: { executionScript: "post('@@URL@@'); log(\"@@URL@@\"); retry(@@URL@@)" },
+			},
+		});
+
+		await createTool.call(ctx);
+
+		const url = 'https://n8n.example.com/webhook/create-incident';
+		expect(ctx.calls[1].body).toMatchObject({
+			ExecutionScript: `post('${url}'); log("${url}"); retry('${url}')`,
+		});
+	});
+
 	it('refuses to register a script whose URL cannot be resolved', async () => {
 		const ctx = makeHookCtx({
 			webhookUrl: undefined,

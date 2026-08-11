@@ -312,11 +312,13 @@ export class ServicelyAITool implements INodeType {
 						noDataExpression: true,
 						typeOptions: {
 							rows: 4,
+							editor: 'jsEditor',
+							editorLanguage: 'javaScript',
 						},
 						default: '',
 						placeholder: "e.g. servicely.http.post(@@URL@@, { 'Number': record.Number })",
 						description:
-							'Script the service desk runs when the agent calls this tool. Exported with it. Every "@@URL@@" is replaced with this tool\'s webhook URL, quoted, when the workflow is activated — so the script does not have to be edited when it moves between instances.',
+							'Script the service desk runs when the agent calls this tool. Exported with it. Every "@@URL@@" is replaced with this tool\'s webhook URL when the workflow is activated, so the script does not have to be edited when it moves between instances. It is quoted for you, unless you quoted the placeholder yourself.',
 					},
 				],
 			},
