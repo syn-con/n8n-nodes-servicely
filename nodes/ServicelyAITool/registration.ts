@@ -8,6 +8,7 @@ import {
 } from '../Servicely/GenericFunctions';
 import type { ServicelyRecord } from '../Servicely/types';
 import {
+	DEFAULT_EXECUTION_SCRIPT,
 	DEFAULT_RESPONSE_TIMEOUT_SECONDS,
 	readParameterDefinitions,
 	readResponseTimeoutSeconds,
@@ -71,6 +72,9 @@ const WEBHOOK_NAME = 'default';
 /** Path segment n8n serves a node's test webhook under, as opposed to `/webhook/`. */
 const TEST_URL_SEGMENT = '/webhook-test/';
 
+/** The segment a production webhook is served under, and what a script is given. */
+const PRODUCTION_URL_SEGMENT = '/webhook/';
+
 /**
  * Whether this is a "Listen for test event" run rather than a production
  * activation. A test run must leave the service desk untouched: it neither
@@ -101,11 +105,16 @@ function toolKey(ctx: IHookFunctions): string {
 }
 
 /**
- * The Execution Script as the service desk should hold it: the option's script with
- * every {@link URL_PLACEHOLDER} replaced by this tool's webhook URL, so a script
- * can name its own endpoint without being edited per instance. The URL is
- * whichever one is being registered, so a test listen writes the test URL — which
- * is the one that answers while it runs.
+ * The Execution Script as the service desk should hold it: the option's script —
+ * or {@link DEFAULT_EXECUTION_SCRIPT} when the node does not give one, since a tool
+ * with no script would be registered and then do nothing — with every
+ * {@link URL_PLACEHOLDER} replaced by this tool's webhook URL, so a script can name
+ * its own endpoint without being edited per instance.
+ *
+ * Always the *production* URL, even when a test listen is what triggered the
+ * registration: the script decides at call time which endpoint it wants (the
+ * default one rewrites the segment when `IsProduction` is false), so handing it a
+ * test URL would leave it deriving a test URL from a test URL.
  *
  * The URL is a string wherever it lands, so a bare placeholder is quoted on the
  * way in. One the script already quoted keeps the quotes it was written with —
@@ -117,7 +126,10 @@ function executionScript(ctx: IHookFunctions): string {
 	const { executionScript: configured } = ctx.getNodeParameter('options', {}) as {
 		executionScript?: string;
 	};
-	const script = String(configured ?? '');
+	// Blank counts as "not given": n8n drops an option left at its default when the
+	// workflow is saved, so the default has to be the fallback rather than only the box
+	const written = String(configured ?? '');
+	const script = written.trim() === '' ? DEFAULT_EXECUTION_SCRIPT : written;
 	if (!script.includes(URL_PLACEHOLDER)) {
 		return script;
 	}
@@ -131,9 +143,11 @@ function executionScript(ctx: IHookFunctions): string {
 		);
 	}
 
+	const productionUrl = url.replace(TEST_URL_SEGMENT, PRODUCTION_URL_SEGMENT);
+
 	return script.replace(URL_PLACEHOLDER_PATTERN, (match) => {
 		const quote = match === URL_PLACEHOLDER ? "'" : match[0];
-		return `${quote}${url}${quote}`;
+		return `${quote}${productionUrl}${quote}`;
 	});
 }
 

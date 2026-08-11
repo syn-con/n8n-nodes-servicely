@@ -15,6 +15,7 @@ import {
 	WebhookAuthorizationError,
 } from './authentication';
 import {
+	DEFAULT_EXECUTION_SCRIPT,
 	DEFAULT_RESPONSE_TIMEOUT_SECONDS,
 	readParameterDefinitions,
 	readResponseTimeoutSeconds,
@@ -311,14 +312,13 @@ export class ServicelyAITool implements INodeType {
 						type: 'string',
 						noDataExpression: true,
 						typeOptions: {
-							rows: 4,
+							rows: 12,
 							editor: 'jsEditor',
 							editorLanguage: 'javaScript',
 						},
-						default: '',
-						placeholder: "e.g. servicely.http.post(@@URL@@, { 'Number': record.Number })",
+						default: DEFAULT_EXECUTION_SCRIPT,
 						description:
-							'Script the service desk runs when the agent calls this tool. Exported with it. Every "@@URL@@" is replaced with this tool\'s webhook URL when the workflow is activated, so the script does not have to be edited when it moves between instances. It is quoted for you, unless you quoted the placeholder yourself.',
+							'Script the service desk runs when the agent calls this tool. Exported with it. Add this option only to replace the default script, which posts the call\'s parameters to this workflow and answers with what it returns. Every "@@URL@@" is replaced with this tool\'s webhook URL when the workflow is activated, so the script does not have to be edited when it moves between instances — quoted for you, unless you quoted the placeholder yourself.',
 					},
 				],
 			},

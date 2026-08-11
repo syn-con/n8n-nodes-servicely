@@ -1,11 +1,20 @@
 import type { IDataObject, IHookFunctions } from 'n8n-workflow';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { PRODUCTION_PARAMETER } from '../parameters';
+import { DEFAULT_EXECUTION_SCRIPT, PRODUCTION_PARAMETER } from '../parameters';
 import { checkToolExists, createTool, deleteTool } from '../registration';
 
 /** The wording of the flag every tool carries, as the agent reads it. */
 const PRODUCTION_DESCRIPTION = PRODUCTION_PARAMETER.description;
+
+/** The webhook URL the stub reports, which is what a script is registered with. */
+const WEBHOOK_URL = 'https://n8n.example.com/webhook/create-incident';
+
+/** The default script as it reaches the instance: its placeholder resolved. */
+const RESOLVED_DEFAULT_SCRIPT = DEFAULT_EXECUTION_SCRIPT.replace(
+	"'@@URL@@'",
+	`'${WEBHOOK_URL}'`,
+);
 
 interface HookStubOptions {
 	/** Responses handed out in order; the last one repeats. */
@@ -177,7 +186,7 @@ describe('create', () => {
 			SelectionPrompt: 'Creates an incident',
 			Description: 'Created by the n8n workflow "My Workflow"',
 			TimeoutSeconds: 60,
-			ExecutionScript: '',
+			ExecutionScript: RESOLVED_DEFAULT_SCRIPT,
 		});
 	});
 
@@ -196,8 +205,33 @@ describe('create', () => {
 			SelectionPrompt: 'Creates an incident, now with feeling',
 			Description: 'Created by the n8n workflow "My Workflow"',
 			TimeoutSeconds: 60,
-			ExecutionScript: '',
+			ExecutionScript: RESOLVED_DEFAULT_SCRIPT,
 		});
+	});
+
+	// A tool with no script would be registered and then do nothing, so the default
+	// is what a node that says nothing gets.
+	it('falls back to the default Execution Script, with its URL resolved', async () => {
+		const ctx = makeHookCtx({ responses: [ok([TOOL]), ok({ id: 'tool-9' })] });
+
+		await createTool.call(ctx);
+
+		const { ExecutionScript } = ctx.calls[1].body as IDataObject;
+		expect(ExecutionScript).toBe(RESOLVED_DEFAULT_SCRIPT);
+		expect(ExecutionScript).not.toContain('@@URL@@');
+		// The script quoted the placeholder itself, so no second pair was added
+		expect(ExecutionScript).toContain(`let url = '${WEBHOOK_URL}';`);
+	});
+
+	it('falls back to the default when the option is left blank', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
+			params: { options: { executionScript: '   ' } },
+		});
+
+		await createTool.call(ctx);
+
+		expect((ctx.calls[1].body as IDataObject).ExecutionScript).toContain('HTTP.post(url)');
 	});
 
 	it('sends the Execution Script with the tool', async () => {
@@ -238,6 +272,23 @@ describe('create', () => {
 		const url = 'https://n8n.example.com/webhook/create-incident';
 		expect(ctx.calls[1].body).toMatchObject({
 			ExecutionScript: `post('${url}'); log("${url}"); retry('${url}')`,
+		});
+	});
+
+	// The script picks its endpoint at call time, so it is given the production URL
+	// even when a test listen is what registered the tool.
+	it('resolves the placeholder to the production URL during a test listen', async () => {
+		const ctx = makeHookCtx({
+			mode: 'manual',
+			webhookUrl: 'https://n8n.example.com/webhook-test/create-incident',
+			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
+			params: { options: { executionScript: 'post(@@URL@@)' } },
+		});
+
+		await createTool.call(ctx);
+
+		expect(ctx.calls[1].body).toMatchObject({
+			ExecutionScript: "post('https://n8n.example.com/webhook/create-incident')",
 		});
 	});
 

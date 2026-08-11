@@ -26,6 +26,41 @@ export const PARAMETER_TYPES: ParameterType[] = ['boolean', 'integer', 'number',
 export const DEFAULT_RESPONSE_TIMEOUT_SECONDS = 60;
 
 /**
+ * The Execution Script a tool gets when the node does not give it one. It is what
+ * actually calls the workflow — a tool registered without a script is a tool that
+ * does nothing — so it is a default rather than an empty box, and the node only
+ * has to say something here to do something *else*.
+ *
+ * `@@URL@@` is resolved at registration (see `registration.ts`); the script quotes
+ * it itself, so it is left as the one string it already is. The `IsProduction`
+ * flag every tool declares picks the endpoint and is then dropped from the
+ * payload, so the workflow is not handed a parameter about its own plumbing.
+ */
+export const DEFAULT_EXECUTION_SCRIPT = `let url = '@@URL@@';
+if (!parameters.IsProduction) {
+    url = url.replace("webhook", "webhook-test");
+}
+delete parameters.IsProduction;
+let payload;
+if (typeof parameters === "string") {
+    payload = JSON.parse(parameters) || {};
+} else {
+    payload = parameters || {};
+}
+const response = HTTP.post(url)
+    .accept("application/json")
+    .body(JSON.stringify(payload))
+    .apiTokenAuth("n8n-demo-webhook")
+    .execute();
+const code = response.code;
+const body = response.getBody();
+answer = {
+    response: body,
+    Success: code >= 200 && code < 300,
+    code: code
+};`;
+
+/**
  * The flag every tool carries on top of what the node declares, so a workflow can
  * tell a real call from a rehearsal without each tool having to define it. The
  * description is what the agent reads when it decides what to send, so it states
