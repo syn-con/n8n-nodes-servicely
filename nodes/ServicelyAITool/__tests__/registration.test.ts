@@ -678,15 +678,38 @@ describe('agent links', () => {
 		]);
 	});
 
-	it('reads each registry whole, once, not one query per record', async () => {
+	it('reads the registry whole, once, not one query per record', async () => {
 		const ctx = ctxFor([agent('a-1', [])], ['a-1']);
 
 		await createTool.call(ctx);
 
+		// And only the registry the node selected in: the assistants were not asked for
 		expect(ctx.agentCalls.filter((call) => call.method === 'GET').map((call) => call.url)).toEqual([
 			'/v1/SystemAIAgent',
-			'/v1/SystemAIAssistant',
 		]);
+	});
+
+	// A workflow that says nothing about a registry is not asking for its tool to be
+	// taken out of it, so nothing is read and nothing is written.
+	it('leaves a registry alone when its option was never added', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([TOOL]), ok(TOOL), ok([])],
+			agents: [agent('a-1', ['tool-9'])],
+			assistants: [agent('s-1', ['tool-9'])],
+		});
+
+		await createTool.call(ctx);
+
+		expect(ctx.agentCalls).toEqual([]);
+	});
+
+	// Added and then emptied is a selection: it says "none of them".
+	it('unlinks everything when the option is there but empty', async () => {
+		const ctx = ctxFor([agent('a-1', ['tool-9'])], []);
+
+		await createTool.call(ctx);
+
+		expect(written(ctx)).toEqual([['/v1/SystemAIAgent/a-1', []]]);
 	});
 
 	it('writes nothing for an agent that already holds the tool', async () => {
@@ -836,6 +859,7 @@ describe('agent links', () => {
 		await createTool.call(ctx);
 
 		expect(written(ctx)).toEqual([['/v1/SystemAIAgent/a-1', ['tool-9']]]);
+		expect(ctx.agentCalls.map((call) => call.url)).not.toContain('/v1/SystemAIAssistant');
 	});
 
 	// An instance too old to have the table reads the same as one with no records.

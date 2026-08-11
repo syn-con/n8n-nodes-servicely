@@ -385,10 +385,17 @@ async function syncParameters(
  * which holders still hold a tool nobody selected any more.
  */
 
-/** The records of one registry the node exports this tool to, as ids. */
-function selectedIds(ctx: IHookFunctions, holder: ToolHolder): string[] {
+/**
+ * The records of one registry the node exports this tool to, as ids, or
+ * `undefined` when the option was never added — which is not the same as an empty
+ * selection. A workflow that says nothing about assistants is not asking for its
+ * tool to be taken out of them, and the reconciliation is skipped entirely rather
+ * than reading a table to conclude there is nothing to do.
+ */
+function selectedIds(ctx: IHookFunctions, holder: ToolHolder): string[] | undefined {
 	const options = ctx.getNodeParameter('options', {}) as Record<string, unknown>;
-	return parseList(options[holder.option] ?? []);
+	const selection = options[holder.option];
+	return selection === undefined ? undefined : parseList(selection);
 }
 
 /**
@@ -523,13 +530,20 @@ async function syncHolderLinks(
 	await Promise.all([link(ctx, holder, toolId, chosen), unlink(ctx, holder, toolId, rest)]);
 }
 
-/** Every registry reconciled against what the node selects in it, all at once. */
+/**
+ * Every registry the node has something to say about, reconciled against what it
+ * selects there, all at once. A registry `selection` answers `undefined` for is
+ * left alone — no read, no writes.
+ */
 function syncAllHolderLinks(
 	ctx: IHookFunctions,
 	toolId: string,
-	selection: (holder: ToolHolder) => string[],
+	selection: (holder: ToolHolder) => string[] | undefined,
 ): Array<Promise<void>> {
-	return TOOL_HOLDERS.map((holder) => syncHolderLinks(ctx, holder, toolId, selection(holder)));
+	return TOOL_HOLDERS.flatMap((holder) => {
+		const selected = selection(holder);
+		return selected === undefined ? [] : [syncHolderLinks(ctx, holder, toolId, selected)];
+	});
 }
 
 /**
