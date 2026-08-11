@@ -54,6 +54,9 @@ const AGENT_TOOLS_FIELD = 'Tools';
 /** Marks a tool record as maintained by n8n rather than edited in the service desk. */
 const NAME_PREFIX = '[n8n]';
 
+/** Stands in for this tool's webhook URL inside the Execution Script. */
+const URL_PLACEHOLDER = '@@URL@@';
+
 /** The node's single webhook, as declared in its description. */
 const WEBHOOK_NAME = 'default';
 
@@ -87,6 +90,33 @@ function toolKey(ctx: IHookFunctions): string {
 		});
 	}
 	return String(id);
+}
+
+/**
+ * The Execution Script as the service desk should hold it: the node's script with
+ * every {@link URL_PLACEHOLDER} replaced by this tool's webhook URL, quoted, so a
+ * script can name its own endpoint without being edited per instance. The URL is
+ * whichever one is being registered, so a test listen writes the test URL — which
+ * is the one that answers while it runs.
+ *
+ * @throws {NodeOperationError} when the script asks for a URL n8n cannot resolve
+ */
+function executionScript(ctx: IHookFunctions): string {
+	const script = String(ctx.getNodeParameter('executionScript', '') ?? '');
+	if (!script.includes(URL_PLACEHOLDER)) {
+		return script;
+	}
+
+	const url = ctx.getNodeWebhookUrl(WEBHOOK_NAME);
+	if (!url) {
+		throw new NodeOperationError(
+			ctx.getNode(),
+			`The Execution Script uses ${URL_PLACEHOLDER}, but this tool's webhook URL could not be resolved`,
+			{ description: 'Give the node a fixed Path, save the workflow, and activate it again.' },
+		);
+	}
+
+	return script.split(URL_PLACEHOLDER).join(`'${url}'`);
 }
 
 /** Whether a request failed with 404. */
@@ -462,6 +492,8 @@ export async function createTool(this: IHookFunctions): Promise<boolean> {
 		Active: true,
 		SelectionPrompt: String(this.getNodeParameter('prompt', '') ?? ''),
 		Description: `Created by the n8n workflow "${workflowName}"`,
+		// Always sent, so clearing the field in n8n clears it on the record too
+		ExecutionScript: executionScript(this),
 		// Sent on every registration, so the caller's patience follows the node's:
 		// a value the node cannot use is one the service desk should not be given.
 		TimeoutSeconds: timeoutSeconds(this),

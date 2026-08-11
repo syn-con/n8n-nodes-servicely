@@ -177,6 +177,7 @@ describe('create', () => {
 			SelectionPrompt: 'Creates an incident',
 			Description: 'Created by the n8n workflow "My Workflow"',
 			TimeoutSeconds: 60,
+			ExecutionScript: '',
 		});
 	});
 
@@ -195,7 +196,46 @@ describe('create', () => {
 			SelectionPrompt: 'Creates an incident, now with feeling',
 			Description: 'Created by the n8n workflow "My Workflow"',
 			TimeoutSeconds: 60,
+			ExecutionScript: '',
 		});
+	});
+
+	it('sends the Execution Script with the tool', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
+			params: { executionScript: 'servicely.log("called")' },
+		});
+
+		await createTool.call(ctx);
+
+		expect(ctx.calls[1].body).toMatchObject({ ExecutionScript: 'servicely.log("called")' });
+	});
+
+	it("replaces @@URL@@ with the tool's quoted webhook URL, every time it appears", async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
+			params: { executionScript: 'post(@@URL@@); retry(@@URL@@)' },
+		});
+
+		await createTool.call(ctx);
+
+		expect(ctx.calls[1].body).toMatchObject({
+			ExecutionScript:
+				"post('https://n8n.example.com/webhook/create-incident'); retry('https://n8n.example.com/webhook/create-incident')",
+		});
+	});
+
+	it('refuses to register a script whose URL cannot be resolved', async () => {
+		const ctx = makeHookCtx({
+			webhookUrl: undefined,
+			params: { executionScript: 'post(@@URL@@)' },
+		});
+
+		await expect(createTool.call(ctx)).rejects.toThrow(
+			"webhook URL could not be resolved",
+		);
+		// Nothing was written
+		expect(ctx.calls).toHaveLength(0);
 	});
 
 	it('mirrors the configured response timeout into TimeoutSeconds', async () => {
