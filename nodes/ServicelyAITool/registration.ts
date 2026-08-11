@@ -93,7 +93,7 @@ function toolKey(ctx: IHookFunctions): string {
 }
 
 /**
- * The Execution Script as the service desk should hold it: the node's script with
+ * The Execution Script as the service desk should hold it: the option's script with
  * every {@link URL_PLACEHOLDER} replaced by this tool's webhook URL, quoted, so a
  * script can name its own endpoint without being edited per instance. The URL is
  * whichever one is being registered, so a test listen writes the test URL — which
@@ -102,7 +102,10 @@ function toolKey(ctx: IHookFunctions): string {
  * @throws {NodeOperationError} when the script asks for a URL n8n cannot resolve
  */
 function executionScript(ctx: IHookFunctions): string {
-	const script = String(ctx.getNodeParameter('executionScript', '') ?? '');
+	const { executionScript: configured } = ctx.getNodeParameter('options', {}) as {
+		executionScript?: string;
+	};
+	const script = String(configured ?? '');
 	if (!script.includes(URL_PLACEHOLDER)) {
 		return script;
 	}

@@ -203,7 +203,7 @@ describe('create', () => {
 	it('sends the Execution Script with the tool', async () => {
 		const ctx = makeHookCtx({
 			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
-			params: { executionScript: 'servicely.log("called")' },
+			params: { options: { executionScript: 'servicely.log("called")' } },
 		});
 
 		await createTool.call(ctx);
@@ -214,7 +214,7 @@ describe('create', () => {
 	it("replaces @@URL@@ with the tool's quoted webhook URL, every time it appears", async () => {
 		const ctx = makeHookCtx({
 			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
-			params: { executionScript: 'post(@@URL@@); retry(@@URL@@)' },
+			params: { options: { executionScript: 'post(@@URL@@); retry(@@URL@@)' } },
 		});
 
 		await createTool.call(ctx);
@@ -228,7 +228,7 @@ describe('create', () => {
 	it('refuses to register a script whose URL cannot be resolved', async () => {
 		const ctx = makeHookCtx({
 			webhookUrl: undefined,
-			params: { executionScript: 'post(@@URL@@)' },
+			params: { options: { executionScript: 'post(@@URL@@)' } },
 		});
 
 		await expect(createTool.call(ctx)).rejects.toThrow(

@@ -210,19 +210,6 @@ export class ServicelyAITool implements INodeType {
 				],
 			},
 			{
-				displayName: 'Execution Script',
-				name: 'executionScript',
-				type: 'string',
-				noDataExpression: true,
-				typeOptions: {
-					rows: 4,
-				},
-				default: '',
-				placeholder: "e.g. servicely.http.post(@@URL@@, { 'Number': record.Number })",
-				description:
-					'Optional script the service desk runs when the agent calls this tool. Exported with it. Every "@@URL@@" is replaced with this tool\'s webhook URL, quoted, when the workflow is activated — so the script does not have to be edited when it moves between instances.',
-			},
-			{
 				displayName: 'Respond',
 				name: 'responseMode',
 				type: 'options',
@@ -326,6 +313,19 @@ export class ServicelyAITool implements INodeType {
 						default: false,
 						description:
 							'Whether values are converted to the defined type before validation, e.g. the string "12" to the number 12. Useful for form encoded bodies.',
+					},
+					{
+						displayName: 'Execution Script',
+						name: 'executionScript',
+						type: 'string',
+						noDataExpression: true,
+						typeOptions: {
+							rows: 4,
+						},
+						default: '',
+						placeholder: "e.g. servicely.http.post(@@URL@@, { 'Number': record.Number })",
+						description:
+							'Script the service desk runs when the agent calls this tool. Exported with it. Every "@@URL@@" is replaced with this tool\'s webhook URL, quoted, when the workflow is activated — so the script does not have to be edited when it moves between instances.',
 					},
 				],
 			},
