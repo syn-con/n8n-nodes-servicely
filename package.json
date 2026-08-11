@@ -1,6 +1,6 @@
 {
   "name": "@syn-con/n8n-nodes-servicely",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "description": "n8n community node for the Servicely ITSM/ESM JSON REST API (v1)",
   "keywords": [
     "n8n-community-node-package",
