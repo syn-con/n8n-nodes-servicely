@@ -1,6 +1,6 @@
 {
   "name": "@syn-con/n8n-nodes-servicely",
-  "version": "0.4.11",
+  "version": "0.5.0",
   "description": "n8n community node for the Servicely ITSM/ESM JSON REST API (v1)",
   "keywords": [
     "n8n-community-node-package",
@@ -16,11 +16,14 @@
   "n8n": {
     "n8nNodesApiVersion": 1,
     "credentials": [
-      "dist/credentials/ServicelyApi.credentials.js"
+      "dist/credentials/ServicelyApi.credentials.js",
+      "dist/credentials/ServicelyAIToolAuthApi.credentials.js"
     ],
     "nodes": [
       "dist/nodes/Servicely/Servicely.node.js",
-      "dist/nodes/Servicely/ServicelyTrigger.node.js"
+      "dist/nodes/Servicely/ServicelyTrigger.node.js",
+      "dist/nodes/ServicelyAITool/ServicelyAITool.node.js",
+      "dist/nodes/ServicelyAITool/ServicelyAIToolResponse.node.js"
     ]
   },
   "scripts": {

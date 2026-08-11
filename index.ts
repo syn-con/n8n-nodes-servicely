@@ -6,6 +6,9 @@
  * credential classes for programmatic consumers.
  */
 export { ServicelyApi } from './credentials/ServicelyApi.credentials';
+export { ServicelyAIToolAuthApi } from './credentials/ServicelyAIToolAuthApi.credentials';
 export { Servicely } from './nodes/Servicely/Servicely.node';
 export { ServicelyTrigger } from './nodes/Servicely/ServicelyTrigger.node';
+export { ServicelyAITool } from './nodes/ServicelyAITool/ServicelyAITool.node';
+export { ServicelyAIToolResponse } from './nodes/ServicelyAITool/ServicelyAIToolResponse.node';
 export * from './nodes/Servicely/types';

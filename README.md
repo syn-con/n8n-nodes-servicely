@@ -1,8 +1,8 @@
 # n8n-nodes-servicely
 
-An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform. It talks to the Servicely JSON REST API (v1) so your workflows can read and write records on any table (Incident, Request, User, Group, …), manage file attachments, run a full-text Global Search, and call instance controllers directly. A companion **Servicely Trigger** node starts workflows on a schedule by dequeuing async-queue messages or polling a table by filter.
+An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform. It talks to the Servicely JSON REST API (v1) so your workflows can read and write records on any table (Incident, Request, User, Group, …), manage file attachments, run a full-text Global Search, and call instance controllers directly. A companion **Servicely Trigger** node starts workflows on a schedule by dequeuing async-queue messages or polling a table by filter, and the **Servicely AI Tool** pair exposes a workflow as a tool the service desk agent can call.
 
-[Installation](#installation) · [Credentials](#credentials) · [Operations](#operations) · [Trigger](#trigger) · [Examples](#examples) · [Compatibility](#compatibility) · [Development](#development)
+[Installation](#installation) · [Credentials](#credentials) · [Operations](#operations) · [Trigger](#trigger) · [AI Tool](#ai-tool) · [Examples](#examples) · [Compatibility](#compatibility) · [Development](#development)
 
 ---
 
@@ -44,6 +44,8 @@ Create a **Servicely API** credential:
 | **Shared Secret** | For HMAC — used to sign each request with HMAC-SHA256. |
 
 Secrets are stored encrypted by n8n and are never written into workflow data.
+
+The **Servicely AI Tool Auth API** credential is separate and points the other way: it describes what an incoming tool call has to present (**Basic Auth**, **Header Auth**, or a **JWT** bearer token verified with a shared secret or a PEM public key). It is optional — a Servicely AI Tool without it accepts any caller. See [AI Tool](#ai-tool).
 
 ## Operations
 
@@ -162,6 +164,32 @@ The **Servicely Trigger** is a polling node — n8n adds a **Poll Times** schedu
 - **Timeout (ms)** — per-request timeout (default 30000).
 - **Max Retries** — retries on rate limits (429), server errors (5xx), and network failures, with exponential backoff + jitter (default 3; `0` disables). `Retry-After` is honored. Client errors (400/401/404/422) are never retried.
 
+## AI Tool
+
+The **Servicely AI Tool** node turns a workflow into a tool the Servicely service desk agent can call. It declares the tool, serves it on an HTTP `POST` endpoint, and validates the call before the workflow runs. The **Servicely AI Tool Response** node sends the answer back.
+
+### Servicely AI Tool (trigger)
+
+- **Name** — the name the tool is exported under in the service desk, e.g. `create_incident`.
+- **Prompt** — what the tool does and when to call it. Exported with the tool, so the agent reads it when deciding.
+- **Path** — the path the tool listens on, appended to the webhook base URL (the full path is served as given, without an internal webhook id).
+- **Parameters** — the tool's arguments. Each row is a **Param Name**, a **Param Type** (`String`, `Number`, `Integer`, `Boolean`; defaults to String) and a **Param Description** that is exported with the tool. Every declared parameter is required, and a call missing one is rejected.
+- **Respond** — *Using Servicely AI Tool Response Node* (default), *Immediately*, or *When Last Node Finishes*.
+- **Timeout (Seconds)** — only for the response-node mode: how long the caller waits before getting a `504`. The workflow keeps running; only the caller stops waiting. Default 60.
+- **On Validation Error** — respond `400` with the errors (default), or run the workflow anyway and pass them on in `json.validation`.
+- **Options → Allow Unknown Parameters** (default on) and **Coerce Types** (default off, converts e.g. the string `"12"` to `12` before validating).
+
+The emitted item carries `body`, `parameters` (the declared arguments, after coercion), `headers`, `query`, `params`, `validation`, and — with a JWT credential — the verified `jwt` payload.
+
+Attach a **Servicely AI Tool Auth API** credential to require authentication. The JWT algorithm is taken from the credential, not from the token, so a caller cannot downgrade the signature.
+
+### Servicely AI Tool Response
+
+- **Respond With** — *Success* (status + data) or *Error* (status + message + optional JSON details, e.g. `{{ $json.validation.errors }}`).
+- **Data** — all incoming items, the first incoming item, a JSON body you write, or no data.
+- **Options → Envelope** (default on) wraps the body in `{ "success": true, "data": … }` / `{ "success": false, "error": … }`; **Message** adds a note to a success; **Response Headers** adds headers.
+- `204` and `304` are sent without a body. Items pass through unchanged, so the workflow can carry on after responding.
+
 ## Examples
 
 **Get all open incidents, sorted newest first**
@@ -186,6 +214,13 @@ The **Servicely Trigger** is a polling node — n8n adds a **Poll Times** schedu
 1. **Servicely Trigger → Async Queue Message**, Queue = your queue, Action Name = the subject, Poll Times every minute.
 2. Downstream nodes handle each message (`json` is the payload; `json._servicely.replyTo` identifies it).
 3. **Servicely → Queue → Reply Success** to acknowledge (or **Reply Failure** on an error branch). Reply To defaults to `={{ $json._servicely.replyTo }}`.
+
+**Expose a workflow as an agent tool**
+
+1. **Servicely AI Tool**, Name `create_incident`, Prompt "Creates an incident for a user and returns its number", Path `create-incident`.
+2. *Parameters:* `shortDescription` (String, "What is wrong"), `priority` (Integer, "1 highest to 4 lowest").
+3. **Servicely → Object → Create**, Table `Incident`, fields taken from `={{ $json.parameters.shortDescription }}` and `={{ $json.parameters.priority }}`.
+4. **Servicely AI Tool Response**, Respond With *Success*, Data *First Incoming Item*.
 
 ## Compatibility
 
@@ -253,11 +288,19 @@ nodes/Servicely/
   SearchFunctions.ts           # listSearch pickers + Table/Field registry loaders
   constants.ts
   types.ts
+
+nodes/ServicelyAITool/
+  ServicelyAITool.node.ts          # webhook trigger: declares + serves the tool
+  ServicelyAIToolResponse.node.ts  # answers the open request
+  validation.ts                    # the four parameter types, coercion, body check
+  authentication.ts                # Basic / Header / JWT, per the attached credential
+  jwt.ts                           # JWS verification (HS/RS/PS/ES), algorithm pinned
 ```
 
 - Each `*.operation.ts` exports `description` (its properties, scoped with `updateDisplayOptions`) and `execute(this, index)` handling **one** item.
 - `router.ts` owns the item loop, `continueOnFail`, and error wrapping, so operations carry no boilerplate.
 - `node.type.ts` makes the resource/operation pairing a compile-time union — an unregistered operation fails to build rather than at runtime.
+- `nodes/ServicelyAITool/` sits outside the `actions/` convention: neither node has a resource/operation pair. The trigger keeps only the description and the webhook handler, the rest lives in the three helper modules next to it, which is what makes them directly unit-testable.
 - `credentials/ServicelyApi.credentials.ts` — its `authenticate` resolves the instance URL into `baseURL` and signs every request (Basic / Bearer / HMAC), so no node code reads credentials.
 - `SearchFunctions.ts` — every **From List** picker is paginated. Servicely's list endpoints are offset-based, so each picker page returns n8n's `paginationToken` (the next page number) whenever the API filled the page; n8n asks for the next one as the user scrolls. Because the API has no text-search parameter, the typed filter is applied per page — a page emptied by filtering still hands back its token, so matches further in the table are not stranded. The **Table** and **Field Name** pickers are the exception: neither is `searchable`, so n8n loads each registry in one go and filters client-side, and the paging happens internally (bounded, since it runs at design time).
 

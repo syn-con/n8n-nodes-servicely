@@ -1,0 +1,418 @@
+import {
+	type IDataObject,
+	type INodeType,
+	type INodeTypeDescription,
+	type IWebhookFunctions,
+	type IWebhookResponseData,
+	NodeConnectionTypes,
+	NodeOperationError,
+} from 'n8n-workflow';
+
+import {
+	type AuthenticationResult,
+	AUTH_CREDENTIAL_NAME,
+	authenticateRequest,
+	WebhookAuthorizationError,
+} from './authentication';
+import {
+	type ParameterDefinition,
+	type ParameterType,
+	isPlainObject,
+	validateBody,
+} from './validation';
+
+/** The still open HTTP response of the request that started the workflow. */
+type WebhookResponse = ReturnType<IWebhookFunctions['getResponseObject']>;
+
+/** One row of the Parameters collection, as the UI stores it. */
+interface ParameterRow {
+	paramName?: string;
+	paramType?: ParameterType | '';
+	paramDescription?: string;
+}
+
+interface ParameterCollection {
+	values?: ParameterRow[];
+}
+
+const PARAMETER_TYPES: ParameterType[] = ['boolean', 'integer', 'number', 'string'];
+
+const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
+
+const DEFAULT_RESPONSE_TIMEOUT_SECONDS = 60;
+
+/**
+ * Exposes a workflow as a tool a Servicely service desk agent can call. The node
+ * declares the tool (name, prompt and typed parameters), serves it on an HTTP POST
+ * endpoint and validates the request body against those parameters before the
+ * workflow starts.
+ */
+export class ServicelyAITool implements INodeType {
+	description: INodeTypeDescription = {
+		displayName: 'Servicely AI Tool',
+		name: 'servicelyAiTool',
+		icon: { light: 'file:../../icons/servicely.svg', dark: 'file:../../icons/servicely.dark.svg' },
+		group: ['trigger'],
+		version: 1,
+		subtitle: '={{$parameter["toolName"] || "POST /" + $parameter["path"]}}',
+		description: 'Expose this workflow as a tool for the Servicely service desk agent',
+		documentationUrl: 'https://docs-servicely.atlassian.net/wiki/spaces/SD/pages/2077523978',
+		eventTriggerDescription: 'Waiting for the agent to call the tool',
+		activationMessage: 'The tool can now be called on your production URL.',
+		defaults: {
+			name: 'Servicely AI Tool',
+		},
+		inputs: [],
+		outputs: [NodeConnectionTypes.Main],
+		// This node defines a tool, it is not itself callable by an n8n agent
+		usableAsTool: undefined,
+		credentials: [
+			{
+				// Optional on purpose: without a credential the endpoint takes any caller
+				name: AUTH_CREDENTIAL_NAME,
+				required: false,
+			},
+		],
+		webhooks: [
+			{
+				name: 'default',
+				httpMethod: 'POST',
+				// Serve exactly the configured path instead of prefixing the internal webhook ID
+				isFullPath: true,
+				path: '={{$parameter["path"]}}',
+				responseMode: '={{$parameter["responseMode"]}}',
+				// "lastNode" answers with the first item of the last node. For the other modes this
+				// has to stay empty, otherwise n8n sends the response data type itself as the body.
+				responseData: '={{$parameter["responseMode"] === "lastNode" ? "firstEntryJson" : ""}}',
+			},
+		],
+		properties: [
+			{
+				displayName:
+					'Attach a Servicely AI Tool Auth credential to require Basic, Header or JWT authentication. Without a credential this endpoint accepts any caller.',
+				name: 'authenticationNotice',
+				type: 'notice',
+				default: '',
+			},
+			{
+				displayName: 'Name',
+				name: 'toolName',
+				type: 'string',
+				default: '',
+				placeholder: 'e.g. create_incident',
+				required: true,
+				description: 'Name this tool is exported under in the Servicely service desk',
+			},
+			{
+				displayName: 'Prompt',
+				name: 'prompt',
+				type: 'string',
+				typeOptions: {
+					rows: 3,
+				},
+				default: '',
+				placeholder: 'e.g. Creates an incident for a user and returns its number',
+				required: true,
+				description:
+					'Tells the agent what this tool does and when to call it. Exported with the tool.',
+			},
+			{
+				displayName: 'Path',
+				name: 'path',
+				type: 'string',
+				default: '',
+				placeholder: 'e.g. create-incident',
+				required: true,
+				description: 'The path this tool listens on, appended to the webhook base URL',
+			},
+			{
+				displayName: 'Parameters',
+				name: 'parameters',
+				placeholder: 'Add Parameter',
+				type: 'fixedCollection',
+				typeOptions: {
+					multipleValues: true,
+					sortable: true,
+				},
+				default: {},
+				description:
+					'The arguments of the tool. They are exported with it and every request is validated against them.',
+				options: [
+					{
+						name: 'values',
+						displayName: 'Parameter',
+						values: [
+							{
+								displayName: 'Param Name',
+								name: 'paramName',
+								type: 'string',
+								default: '',
+								placeholder: 'e.g. customerId',
+								description: 'Name of the argument, as the agent has to send it',
+								required: true,
+							},
+							{
+								displayName: 'Param Type',
+								name: 'paramType',
+								type: 'options',
+								options: [
+									{
+										name: 'Boolean',
+										value: 'boolean',
+									},
+									{
+										name: 'Integer',
+										value: 'integer',
+									},
+									{
+										name: 'Number',
+										value: 'number',
+									},
+									{
+										name: 'String',
+										value: 'string',
+									},
+								],
+								// The empty default is deliberate. n8n drops parameter values that equal
+								// their default when a workflow is saved, so a default that cannot be
+								// picked is what keeps paramType in the exported JSON — the tool
+								// definition then survives an import on another instance.
+								default: '',
+								description: 'The type the value must have. Defaults to String.',
+							},
+							{
+								displayName: 'Param Description',
+								name: 'paramDescription',
+								type: 'string',
+								default: '',
+								placeholder: 'e.g. ID of the customer the incident is raised for',
+								description: 'What this argument means. Exported with the tool.',
+							},
+						],
+					},
+				],
+			},
+			{
+				displayName: 'Respond',
+				name: 'responseMode',
+				type: 'options',
+				options: [
+					{
+						name: 'Using Servicely AI Tool Response Node',
+						value: 'responseNode',
+						description:
+							'Respond from a Servicely AI Tool Response node further down the workflow',
+					},
+					{
+						name: 'Immediately',
+						value: 'onReceived',
+						description: 'Respond as soon as this node validated the request',
+					},
+					{
+						name: 'When Last Node Finishes',
+						value: 'lastNode',
+						description: 'Respond with the data of the last executed node',
+					},
+				],
+				default: 'responseNode',
+				description: 'When and how to respond to the calling agent',
+			},
+			{
+				displayName: 'Timeout (Seconds)',
+				name: 'responseTimeout',
+				type: 'number',
+				typeOptions: {
+					minValue: 1,
+					maxValue: 3600,
+				},
+				default: DEFAULT_RESPONSE_TIMEOUT_SECONDS,
+				description:
+					'How long to wait for the Servicely AI Tool Response node. When it does not respond in time the caller gets a 504, while the workflow keeps running.',
+				displayOptions: { show: { responseMode: ['responseNode'] } },
+			},
+			{
+				displayName: 'On Validation Error',
+				name: 'onValidationError',
+				type: 'options',
+				options: [
+					{
+						name: 'Respond 400 Bad Request',
+						value: 'respondError',
+						description: 'Reject the request with the validation errors, the workflow does not run',
+					},
+					{
+						name: 'Run Workflow Anyway',
+						value: 'continue',
+						description:
+							'Run the workflow and pass the validation errors on in the "validation" property',
+					},
+				],
+				default: 'respondError',
+				description: 'What to do when the request body does not match the parameters',
+			},
+			{
+				displayName: 'Options',
+				name: 'options',
+				type: 'collection',
+				placeholder: 'Add option',
+				default: {},
+				options: [
+					{
+						displayName: 'Allow Unknown Parameters',
+						name: 'allowUnknownParameters',
+						type: 'boolean',
+						default: true,
+						description:
+							'Whether body properties that are not defined above are accepted. If turned off, they are reported as validation errors.',
+					},
+					{
+						displayName: 'Coerce Types',
+						name: 'coerceTypes',
+						type: 'boolean',
+						default: false,
+						description:
+							'Whether values are converted to the defined type before validation, e.g. the string "12" to the number 12. Useful for form encoded bodies.',
+					},
+				],
+			},
+		],
+	};
+
+	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
+		const onValidationError = this.getNodeParameter('onValidationError') as
+			| 'respondError'
+			| 'continue';
+		const options = this.getNodeParameter('options', {}) as {
+			allowUnknownParameters?: boolean;
+			coerceTypes?: boolean;
+		};
+
+		const response = this.getResponseObject();
+
+		let authentication: AuthenticationResult | undefined;
+		try {
+			authentication = await authenticateRequest(this);
+		} catch (error) {
+			if (error instanceof WebhookAuthorizationError) {
+				response.writeHead(error.responseCode, { ...JSON_HEADERS, ...error.headers });
+				response.end(JSON.stringify({ success: false, error: { message: error.message } }));
+				return { noWebhookResponse: true };
+			}
+			throw error;
+		}
+
+		const definitions = getParameterDefinitions(this);
+		const body = this.getBodyData();
+
+		const result = isPlainObject(body)
+			? validateBody(body, definitions, {
+					allowUnknownParameters: options.allowUnknownParameters ?? true,
+					coerceTypes: options.coerceTypes ?? false,
+				})
+			: {
+					valid: false,
+					errors: [{ key: '', message: 'The request body must be a JSON object' }],
+					parameters: {},
+				};
+
+		if (!result.valid && onValidationError === 'respondError') {
+			response.writeHead(400, JSON_HEADERS);
+			response.end(
+				JSON.stringify({
+					success: false,
+					error: { message: 'Request body validation failed', details: result.errors },
+				}),
+			);
+			return { noWebhookResponse: true };
+		}
+
+		// The response node answers whenever the workflow reaches it, which may be never.
+		// The timer bounds how long the agent is left hanging.
+		if ((this.getNodeParameter('responseMode') as string) === 'responseNode') {
+			scheduleResponseTimeout(
+				response,
+				this.getNodeParameter('responseTimeout', DEFAULT_RESPONSE_TIMEOUT_SECONDS) as number,
+			);
+		}
+
+		const json: IDataObject = {
+			body,
+			parameters: result.parameters,
+			headers: this.getHeaderData(),
+			query: this.getQueryData(),
+			params: this.getParamsData(),
+			validation: { valid: result.valid, errors: result.errors },
+		};
+		if (authentication?.jwtPayload !== undefined) {
+			json.jwt = authentication.jwtPayload;
+		}
+
+		return {
+			// Only used by the "Immediately" response mode, the other modes answer later
+			webhookResponse: { success: true, message: 'Workflow was started' },
+			workflowData: [[{ json }]],
+		};
+	}
+}
+
+/**
+ * Answers the still open request with 504 when nothing responded within `seconds`.
+ * The workflow itself is left running; only the caller stops waiting.
+ */
+function scheduleResponseTimeout(response: WebhookResponse, seconds: number): void {
+	if (!Number.isFinite(seconds) || seconds <= 0) {
+		return;
+	}
+
+	const timer = setTimeout(() => {
+		if (response.headersSent || response.writableEnded) {
+			return;
+		}
+		response.writeHead(504, JSON_HEADERS);
+		response.end(
+			JSON.stringify({
+				success: false,
+				error: { message: `The workflow did not respond within ${seconds} seconds` },
+			}),
+		);
+	}, seconds * 1000);
+
+	// A pending timer must not hold the process open, and it is pointless once the
+	// response node (or a client disconnect) has closed the request.
+	timer.unref?.();
+	response.on('close', () => clearTimeout(timer));
+}
+
+function getParameterDefinitions(context: IWebhookFunctions): ParameterDefinition[] {
+	const collection = context.getNodeParameter('parameters', {}) as ParameterCollection;
+	const definitions: ParameterDefinition[] = [];
+	const seen = new Set<string>();
+
+	for (const row of collection.values ?? []) {
+		// `||` and not `??`: an unset field resolves to an empty string, not to undefined
+		const key = (row.paramName || '').trim();
+		if (!key) {
+			throw new NodeOperationError(context.getNode(), 'A parameter is defined without a name');
+		}
+		if (seen.has(key)) {
+			throw new NodeOperationError(
+				context.getNode(),
+				`The parameter "${key}" is defined more than once`,
+			);
+		}
+		seen.add(key);
+
+		const type = row.paramType || 'string';
+		if (!PARAMETER_TYPES.includes(type)) {
+			throw new NodeOperationError(
+				context.getNode(),
+				`The parameter "${key}" has an unknown type "${type}"`,
+				{ description: `Use one of: ${PARAMETER_TYPES.join(', ')}.` },
+			);
+		}
+
+		definitions.push({ key, type, description: (row.paramDescription || '').trim() });
+	}
+
+	return definitions;
+}
