@@ -149,10 +149,12 @@ async function searchRecordsInTable(
 
 /**
  * The instance's table registry: one row per table. TABLE_NAME_FIELD holds the
- * API table name — the segment that goes into `/v1/{table}` — which is what the
- * picker stores and shows. The row's `id` is an opaque key, so it is never used
- * as the value: a locator has to resolve to the same plain table name whether it
- * came from the list, was typed by name, or arrived from an expression.
+ * API table name — the segment that goes into `/v1/{table}` — and that is what
+ * the picker shows. What it *stores* is the row's id, because that is what
+ * `FieldDefinition` references, so the Field pickers need no lookup of their own.
+ * The operations still need the name, and read it off the locator's cached label
+ * (see `locatorLabel`), which also covers a table typed by name or arriving from
+ * an expression.
  */
 const TABLE_DEFINITION_TABLE = 'TableDefinition';
 
@@ -164,8 +166,8 @@ const FIELD_DEFINITION_TABLE = 'FieldDefinition';
 
 /**
  * `FieldDefinition` reference back to the table a field belongs to. It holds the
- * `TableDefinition` row's id, not the table name, so listing a table's fields
- * takes a name → id lookup first (see `tableId`).
+ * `TableDefinition` row's id, not the table name — which is the id the table
+ * picker stores, so a table's fields are one query with nothing to resolve first.
  */
 const FIELD_TABLE_FIELD = 'Table';
 
@@ -174,9 +176,6 @@ const FIELD_NAME_FIELD = 'FieldName';
 
 /** The instance's AI agents, offered by the AI Tool node's AI Agents selector. */
 const AI_AGENT_TABLE = 'SystemAIAgent';
-
-/** `SystemAIAgent` field holding the identifier an agent is stored and exported under. */
-const AI_AGENT_KEY_FIELD = 'Key';
 
 /** `SystemAIAgent` field holding the agent's display name. */
 const AI_AGENT_NAME_FIELD = 'Name';
@@ -258,8 +257,9 @@ export async function discoverTables(ctx: ILoadOptionsFunctions): Promise<INodeL
  * Every `FieldDefinition` row of one table as a search item, exactly as
  * `discoverTables` treats the table registry: keyed and labelled by the field's
  * API name, rows carrying no name skipped, deduped and sorted. The rows are the
- * ones whose `TableId` matches the table, resolved from its name first. A registry
- * that cannot be read (or a name absent from it) leaves the list empty, and fields
+ * ones referencing `table`, which is whatever the table locator resolved to — the
+ * `TableDefinition` row id when it was picked from the list. A registry that
+ * cannot be read (or a table it does not know) leaves the list empty, and fields
  * stay reachable via the locator's "By Name" mode.
  */
 export async function discoverFields(ctx: ILoadOptionsFunctions, table: string): Promise<INodeListSearchItems[]> {
@@ -506,10 +506,9 @@ export async function getAiAgents(this: ILoadOptionsFunctions): Promise<INodePro
   } catch {
     return [];
   }
-
   const byKey = new Map<string, INodePropertyOptions>();
   for (const row of rows) {
-    const key = fieldString(row, AI_AGENT_KEY_FIELD)?.trim();
+    const key = fieldString(row, ID_FIELD)?.trim();
     if (key === undefined || byKey.has(key)) {
       continue;
     }

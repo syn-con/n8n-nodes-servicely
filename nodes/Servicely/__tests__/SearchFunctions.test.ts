@@ -65,7 +65,7 @@ describe('listSearchMethods', () => {
 });
 
 describe('discoverTables', () => {
-  it('reads TableDefinition and keys entries by the API table name, not the row id', async () => {
+  it('reads TableDefinition, labelling by the API table name and storing the row id', async () => {
     const { ctx, http } = ctxFor([
       ok([
         { id: 'guid-1', Table: 'Incident' },
@@ -77,9 +77,11 @@ describe('discoverTables', () => {
 
     expect(http.calls[0].options.url).toBe('/v1/TableDefinition');
     expect(http.calls[0].options.qs).toEqual({ page: 1, page_size: DISCOVERY_PAGE_SIZE });
+    // The id is what FieldDefinition references; the name reaches the operations
+    // as the locator's cached label (see locatorLabel).
     expect(tables).toEqual([
-      { name: 'Incident', value: 'Incident' },
-      { name: 'ITSMRequest', value: 'ITSMRequest' },
+      { name: 'Incident', value: 'guid-1' },
+      { name: 'ITSMRequest', value: 'guid-2' },
     ]);
   });
 
@@ -93,13 +95,19 @@ describe('discoverTables', () => {
     ]);
 
     await expect(discoverTables(ctx)).resolves.toEqual([
-      { name: 'Alpha', value: 'Alpha' },
-      { name: 'Zulu', value: 'Zulu' },
+      { name: 'Alpha', value: 'guid-2' },
+      { name: 'Zulu', value: 'guid-1' },
     ]);
   });
 
   it('skips rows with no usable table name', async () => {
     const { ctx } = ctxFor([ok([{ id: 'guid-1', Table: '  ' }, { id: 'guid-2' }, { id: 'guid-3', Table: 'Incident' }])]);
+
+    await expect(discoverTables(ctx)).resolves.toEqual([{ name: 'Incident', value: 'guid-3' }]);
+  });
+
+  it('falls back to the table name when a registry row carries no id', async () => {
+    const { ctx } = ctxFor([ok([{ Table: 'Incident' }])]);
 
     await expect(discoverTables(ctx)).resolves.toEqual([{ name: 'Incident', value: 'Incident' }]);
   });
@@ -122,36 +130,30 @@ describe('searchTables', () => {
 
     const result = await searchTables.call(ctx as ILoadOptionsFunctions, 'inc');
 
-    expect(result.results).toEqual([{ name: 'Incident', value: 'Incident' }]);
+    expect(result.results).toEqual([{ name: 'Incident', value: 'guid-1' }]);
   });
 });
 
 describe('discoverFields', () => {
-  /** The TableDefinition name → id lookup every field read starts with. */
-  const tableIdLookup = ok([{ id: 'guid-1', Table: 'Incident' }]);
-
-  it('resolves the table id, then keys FieldDefinition rows by FieldName as the table registry does', async () => {
+  // The table locator hands over the TableDefinition row id, which is what
+  // FieldDefinition references — so the fields are one query, with no name → id
+  // lookup in front of it.
+  it('keys FieldDefinition rows by FieldName, queried by the table it is given', async () => {
     const { ctx, http } = ctxFor([
-      tableIdLookup,
       ok([
         { id: 'f1', FieldName: 'State' },
         { id: 'f2', FieldName: 'AssignmentGroup' },
       ]),
     ]);
 
-    const fields = await discoverFields(ctx, 'Incident');
+    const fields = await discoverFields(ctx, 'guid-1');
 
-    expect(http.calls[0].options.url).toBe('/v1/TableDefinition');
+    expect(http.count()).toBe(1);
+    expect(http.calls[0].options.url).toBe('/v1/FieldDefinition');
     expect(http.calls[0].options.qs).toEqual({
       page: 1,
-      page_size: 1,
-      query: JSON.stringify({ and: [{ fieldName: 'Table', operator: '=', value: 'Incident' }] }),
-    });
-    expect(http.calls[1].options.url).toBe('/v1/FieldDefinition');
-    expect(http.calls[1].options.qs).toEqual({
-      page: 1,
       page_size: DISCOVERY_PAGE_SIZE,
-      query: JSON.stringify({ and: [{ fieldName: 'TableId', operator: '=', value: 'guid-1' }] }),
+      query: JSON.stringify({ and: [{ fieldName: 'Table', operator: '=', value: 'guid-1' }] }),
     });
     expect(fields).toEqual([
       { name: 'AssignmentGroup', value: 'AssignmentGroup' },
@@ -161,7 +163,6 @@ describe('discoverFields', () => {
 
   it('dedupes names and skips rows with no usable FieldName', async () => {
     const { ctx } = ctxFor([
-      tableIdLookup,
       ok([
         { id: 'f1', FieldName: 'State' },
         { id: 'f2', FieldName: 'State' },
@@ -170,7 +171,7 @@ describe('discoverFields', () => {
       ]),
     ]);
 
-    await expect(discoverFields(ctx, 'Incident')).resolves.toEqual([{ name: 'State', value: 'State' }]);
+    await expect(discoverFields(ctx, 'guid-1')).resolves.toEqual([{ name: 'State', value: 'State' }]);
   });
 
   it('makes no request when no table is given', async () => {
@@ -180,43 +181,37 @@ describe('discoverFields', () => {
     expect(http.count()).toBe(0);
   });
 
-  it('stops at the lookup when the table is not in the registry', async () => {
+  it('offers nothing for a table the field registry does not know', async () => {
     const { ctx, http } = ctxFor([ok([])]);
 
-    await expect(discoverFields(ctx, 'Nope')).resolves.toEqual([]);
+    await expect(discoverFields(ctx, 'guid-nope')).resolves.toEqual([]);
     expect(http.count()).toBe(1);
   });
 
-  it('returns an empty list when a registry does not respond', async () => {
-    await expect(discoverFields(ctxFor([{ status: 404, body: {} }]).ctx, 'Incident')).resolves.toEqual([]);
-    await expect(
-      discoverFields(ctxFor([tableIdLookup, { status: 404, body: {} }]).ctx, 'Incident'),
-    ).resolves.toEqual([]);
+  it('returns an empty list when the registry does not respond', async () => {
+    await expect(discoverFields(ctxFor([{ status: 404, body: {} }]).ctx, 'guid-1')).resolves.toEqual([]);
   });
 });
 
 describe('searchFields', () => {
   it("offers the selected table's fields", async () => {
-    const { ctx, http } = ctxFor(
-      [ok([{ id: 'guid-1', Table: 'Incident' }]), ok([{ id: 'f1', FieldName: 'ShortDescription' }])],
-      { tableName: 'Incident' },
-    );
+    const { ctx, http } = ctxFor([ok([{ id: 'f1', FieldName: 'ShortDescription' }])], {
+      tableName: 'guid-1',
+    });
 
     await expect(searchFields.call(ctx as ILoadOptionsFunctions)).resolves.toEqual({
       results: [{ name: 'ShortDescription', value: 'ShortDescription' }],
     });
-    expect(http.calls[1].options.qs?.query).toBe(
-      JSON.stringify({ and: [{ fieldName: 'TableId', operator: '=', value: 'guid-1' }] }),
+    // Queried by what the table locator stores, straight through
+    expect(http.calls[0].options.qs?.query).toBe(
+      JSON.stringify({ and: [{ fieldName: 'Table', operator: '=', value: 'guid-1' }] }),
     );
   });
 
   it('filters the field names client-side', async () => {
     const { ctx } = ctxFor(
-      [
-        ok([{ id: 'guid-1', Table: 'Incident' }]),
-        ok([{ id: 'f1', FieldName: 'State' }, { id: 'f2', FieldName: 'ShortDescription' }]),
-      ],
-      { tableName: 'Incident' },
+      [ok([{ id: 'f1', FieldName: 'State' }, { id: 'f2', FieldName: 'ShortDescription' }])],
+      { tableName: 'guid-1' },
     );
 
     await expect(searchFields.call(ctx as ILoadOptionsFunctions, 'desc')).resolves.toEqual({
@@ -263,40 +258,40 @@ describe('getFields', () => {
 });
 
 describe('getAiAgents', () => {
-  it('reads SystemAIAgent, labelling by Name and storing the Key, sorted', async () => {
+  it('reads SystemAIAgent, labelling by Name and storing the row id, sorted', async () => {
     const { ctx, http } = ctxFor([
       ok([
-        { id: 'a1', Name: 'Service Desk Agent', Key: 'service_desk' },
-        { id: 'a2', Name: 'Approvals Agent', Key: 'approvals' },
+        { id: 'a1', Name: 'Service Desk Agent' },
+        { id: 'a2', Name: 'Approvals Agent' },
       ]),
     ]);
 
     await expect(getAiAgents.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([
-      { name: 'Approvals Agent', value: 'approvals' },
-      { name: 'Service Desk Agent', value: 'service_desk' },
+      { name: 'Approvals Agent', value: 'a2' },
+      { name: 'Service Desk Agent', value: 'a1' },
     ]);
     expect(http.calls[0].options.url).toBe('/v1/SystemAIAgent');
     expect(http.calls[0].options.qs).toEqual({ page: 1, page_size: DISCOVERY_PAGE_SIZE });
   });
 
-  it('dedupes repeated keys and falls back to the key when a row has no name', async () => {
+  it('dedupes repeated ids and falls back to the id when a row has no name', async () => {
     const { ctx } = ctxFor([
       ok([
-        { id: 'a1', Key: 'approvals' },
-        { id: 'a2', Name: 'Second Approvals', Key: 'approvals' },
+        { id: 'a1' },
+        { id: 'a1', Name: 'Second Approvals' },
       ]),
     ]);
 
     await expect(getAiAgents.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([
-      { name: 'approvals', value: 'approvals' },
+      { name: 'a1', value: 'a1' },
     ]);
   });
 
-  it('skips rows without a key', async () => {
-    const { ctx } = ctxFor([ok([{ id: 'a1', Name: 'Keyless' }, { id: 'a2', Name: 'Ok', Key: 'ok' }])]);
+  it('skips rows without an id', async () => {
+    const { ctx } = ctxFor([ok([{ Name: 'Idless' }, { id: 'a2', Name: 'Ok' }])]);
 
     await expect(getAiAgents.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([
-      { name: 'Ok', value: 'ok' },
+      { name: 'Ok', value: 'a2' },
     ]);
   });
 

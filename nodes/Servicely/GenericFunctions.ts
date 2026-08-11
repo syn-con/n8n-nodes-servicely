@@ -1,6 +1,7 @@
 import {
   type IDataObject,
   type IExecuteFunctions,
+  type IHookFunctions,
   type IHttpRequestMethods,
   type IHttpRequestOptions,
   type ILoadOptionsFunctions,
@@ -23,10 +24,15 @@ import type { FilterCondition, QueryCriterion, QueryOperator, ServicelyQuery } f
 
 /**
  * Every n8n context that talks to Servicely: the execution context, the polling
- * trigger, and the design-time load-options / list-search context. All three can
- * call `helpers.httpRequestWithAuthentication`, which is all these helpers need.
+ * trigger, the design-time load-options / list-search context, and the webhook
+ * lifecycle hooks that register the AI Tool. All of them can call
+ * `helpers.httpRequestWithAuthentication`, which is all these helpers need.
  */
-export type ServicelyContext = IExecuteFunctions | ILoadOptionsFunctions | IPollFunctions;
+export type ServicelyContext =
+  | IExecuteFunctions
+  | IHookFunctions
+  | ILoadOptionsFunctions
+  | IPollFunctions;
 
 /**
  * Field-value pair emitted by the `fieldsToSet` fixedCollection. `name` is a
@@ -47,12 +53,24 @@ export function stringParam(ctx: IExecuteFunctions, name: string, index: number)
 export function locator(ctx: IExecuteFunctions, name: string, index: number): string {
   return ctx.getNodeParameter(name, index, '', { extractValue: true }) as string;
 }
+/**
+ * Read what a resourceLocator *shows* rather than what it stores. The Table
+ * picker stores a `TableDefinition` row id, while `/v1/{table}` needs the API
+ * table name, and the name is what n8n cached alongside the id when the entry
+ * was picked from the list.
+ *
+ * Everything else resolves to itself: a locator in "By Name" mode holds the name
+ * in `value` with nothing cached, and a plain string is what an expression
+ * produces and what workflows saved before the locator existed still hold — same
+ * reasoning as `fieldRef`, so none of them needs migrating.
+ */
 export function locatorLabel(ctx: IExecuteFunctions, name: string, index: number): string {
-  const label = ctx.getNodeParameter(name, index, '', { extractValue: false }) as IDataObject;
-  if (label.cachedResultName) {
-    return String(label.cachedResultName).trim();
+  const label = ctx.getNodeParameter(name, index, '', { extractValue: false });
+  if (label === null || typeof label !== 'object') {
+    return label === undefined ? '' : String(label).trim();
   }
-  return String(label.value).trim();
+  const { cachedResultName, value } = label as IDataObject;
+  return String(cachedResultName ?? value ?? '').trim();
 }
 
 /**

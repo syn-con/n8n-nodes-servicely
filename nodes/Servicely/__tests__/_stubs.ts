@@ -103,6 +103,9 @@ export function makeExecuteCtx(options: ExecuteCtxOptions = {}): IExecuteFunctio
     getNodeParameter: (name: string, _i: number, fallback?: unknown) => (name in params ? params[name] : fallback),
     continueOnFail: () => options.continueOnFail ?? false,
     getNode: () => NODE,
+    // A real execution context has one, and an operation that logs must not take
+    // the run down with it
+    logger: { error: () => {}, warn: () => {}, info: () => {}, debug: () => {} },
     helpers: {
       httpRequestWithAuthentication: options.http?.fn ?? makeHttpStub([ok([])]).fn,
       assertBinaryData: () => ({ fileName: binary.fileName, mimeType: binary.mimeType }) as IBinaryData,
