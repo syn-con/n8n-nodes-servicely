@@ -647,7 +647,7 @@ describe('agent links', () => {
 		return makeHookCtx({
 			responses: [ok([TOOL]), ok(TOOL), ok([])],
 			agents,
-			params: selected === undefined ? {} : { aiAgents: selected },
+			params: selected === undefined ? {} : { options: { aiAgents: selected } },
 		});
 	}
 
@@ -740,7 +740,7 @@ describe('agent links', () => {
 			responses: [ok([TOOL]), ok(TOOL), ok([])],
 			agents: [agent('a-1', [])],
 			agentWriteStatus: 404,
-			params: { aiAgents: ['a-1'] },
+			params: { options: { aiAgents: ['a-1'] } },
 		});
 
 		await expect(createTool.call(ctx)).resolves.toBe(true);
@@ -751,7 +751,7 @@ describe('agent links', () => {
 		const ctx = makeHookCtx({
 			responses: [ok([TOOL]), ok(TOOL), ok([])],
 			agentListStatus: 404,
-			params: { aiAgents: ['a-1'] },
+			params: { options: { aiAgents: ['a-1'] } },
 		});
 
 		await expect(createTool.call(ctx)).resolves.toBe(true);
@@ -762,7 +762,10 @@ describe('agent links', () => {
 		const ctx = makeHookCtx({
 			responses: [ok([TOOL]), ok(TOOL), ok([])],
 			agentListStatus: 401,
-			params: { aiAgents: ['a-1'], parameters: declares({ name: 'ticketId' }) },
+			params: {
+				options: { aiAgents: ['a-1'] },
+				parameters: declares({ name: 'ticketId' }),
+			},
 		});
 
 		await expect(createTool.call(ctx)).rejects.toThrow('Authentication failed');

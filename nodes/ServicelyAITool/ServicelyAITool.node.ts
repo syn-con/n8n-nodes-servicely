@@ -109,18 +109,6 @@ export class ServicelyAITool implements INodeType {
 					'Tells the agent what this tool does and when to call it. Exported with the tool.',
 			},
 			{
-				displayName: 'AI Agents',
-				name: 'aiAgents',
-				type: 'multiOptions',
-				noDataExpression: true,
-				typeOptions: {
-					loadOptionsMethod: 'getAiAgents',
-				},
-				default: [],
-				description:
-					'The Servicely AI agents this tool is exported to. The list shows SystemAIAgent records by Name; each agent is stored by its record ID. Activating the workflow adds the tool to those agents\' Tools, and takes it out of the agents you deselect.',
-			},
-			{
 				displayName: 'Path',
 				name: 'path',
 				type: 'string',
@@ -288,6 +276,18 @@ export class ServicelyAITool implements INodeType {
 				placeholder: 'Add option',
 				default: {},
 				options: [
+					{
+						displayName: 'AI Agents',
+						name: 'aiAgents',
+						type: 'multiOptions',
+						noDataExpression: true,
+						typeOptions: {
+							loadOptionsMethod: 'getAiAgents',
+						},
+						default: [],
+						description:
+							"The Servicely AI agents this tool is exported to. The list shows SystemAIAgent records by Name; each agent is stored by its record ID. Activating the workflow adds the tool to those agents' Tools, and takes it out of the agents you deselect — so leaving this out unlinks the tool from every agent.",
+					},
 					{
 						displayName: 'Allow Unknown Parameters',
 						name: 'allowUnknownParameters',

@@ -98,6 +98,17 @@ function property(name: string): INodeProperties {
 	return found;
 }
 
+/** Reads an entry of the Options collection. */
+function option(name: string): INodeProperties {
+	const found = (property('options').options ?? []).find(
+		(entry) => 'name' in entry && entry.name === name,
+	);
+	if (found === undefined) {
+		throw new Error(`the node has no "${name}" option`);
+	}
+	return found as INodeProperties;
+}
+
 /** One row of the Parameters fixedCollection. */
 const parameterRow = (name: string, type?: string, description?: string) => ({
 	paramName: name,
@@ -135,16 +146,18 @@ describe('node description', () => {
 			.filter((entry) => entry.type !== 'notice')
 			.map((entry) => entry.name);
 
-		expect(named.slice(0, 3)).toEqual(['prompt', 'aiAgents', 'path']);
+		expect(named.slice(0, 3)).toEqual(['prompt', 'path', 'parameters']);
 		expect(named).not.toContain('toolName');
 		expect(property('prompt').required).toBe(true);
 		expect(node.description.subtitle).toBe('={{"POST /" + $parameter["path"]}}');
 	});
 
 	it('loads the AI Agents multi-select from the SystemAIAgent registry', () => {
-		expect(property('aiAgents').type).toBe('multiOptions');
-		expect(property('aiAgents').typeOptions?.loadOptionsMethod).toBe('getAiAgents');
-		expect(property('aiAgents').default).toEqual([]);
+		const agents = option('aiAgents');
+
+		expect(agents.type).toBe('multiOptions');
+		expect(agents.typeOptions?.loadOptionsMethod).toBe('getAiAgents');
+		expect(agents.default).toEqual([]);
 		expect(node.methods.loadOptions.getAiAgents).toBe(getAiAgents);
 	});
 

@@ -376,7 +376,8 @@ async function syncParameters(
 
 /** The agents the node exports this tool to, as record ids. */
 function selectedAgentIds(ctx: IHookFunctions): string[] {
-	return parseList(ctx.getNodeParameter('aiAgents', []));
+	const { aiAgents } = ctx.getNodeParameter('options', {}) as { aiAgents?: string[] };
+	return parseList(aiAgents ?? []);
 }
 
 /**
