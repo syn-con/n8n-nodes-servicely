@@ -1,3 +1,4 @@
+import { createHmac } from 'crypto';
 import type { IDataObject, INodeProperties, IWebhookFunctions } from 'n8n-workflow';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,6 +10,9 @@ const node = new ServicelyAITool();
 interface WebhookStubOptions {
 	params?: IDataObject;
 	body?: unknown;
+	/** Attached Servicely AI Tool Auth credential; absent leaves the endpoint open. */
+	credential?: IDataObject;
+	headers?: Record<string, string>;
 }
 
 /** Minimal stand-in for the still open express response. */
@@ -67,9 +71,14 @@ function makeWebhookCtx(options: WebhookStubOptions = {}) {
 		getHeaderData: () => ({ 'content-type': 'application/json' }),
 		getQueryData: () => ({}),
 		getParamsData: () => ({}),
-		getRequestObject: () => ({ headers: {} }),
-		// No credential attached, so the endpoint stays public
-		getNode: () => ({ name: 'Servicely AI Tool', credentials: undefined }),
+		getRequestObject: () => ({ headers: options.headers ?? {} }),
+		getCredentials: async () => options.credential,
+		getNode: () => ({
+			name: 'Servicely AI Tool',
+			// Without an attached credential the endpoint takes any caller
+			credentials:
+				options.credential === undefined ? undefined : { servicelyAiToolAuthApi: { id: '1' } },
+		}),
 	};
 
 	return ctx as unknown as IWebhookFunctions & { response: ResponseStub };
@@ -98,13 +107,21 @@ const parameterRow = (name: string, type?: string, description?: string) => ({
 });
 
 describe('node description', () => {
-	it('is a POST webhook trigger that reads the instance and takes an optional auth credential', () => {
+	it('is a POST webhook trigger needing both the instance and the endpoint credential', () => {
 		expect(node.description.name).toBe('servicelyAiTool');
 		expect(node.description.inputs).toEqual([]);
 		expect(node.description.webhooks?.[0].httpMethod).toBe('POST');
 		expect(node.description.credentials).toEqual([
 			{ name: 'servicelyApi', required: true },
-			{ name: 'servicelyAiToolAuthApi', required: false },
+			{ name: 'servicelyAiToolAuthApi', required: true },
+		]);
+	});
+
+	it('registers the tool through the webhook lifecycle hooks', () => {
+		expect(Object.keys(node.webhookMethods.default).sort()).toEqual([
+			'checkExists',
+			'create',
+			'delete',
 		]);
 	});
 
@@ -136,11 +153,86 @@ describe('node description', () => {
 		expect(types).toEqual(['boolean', 'integer', 'number', 'string']);
 	});
 
-	it('shows the timeout only when a response node answers', () => {
-		expect(property('responseTimeout').displayOptions).toEqual({
-			show: { responseMode: ['responseNode'] },
+	it('titles the timeout after whatever the mode waits for, and shows it in both', () => {
+		const timeouts = node.description.properties.filter(
+			(entry) => entry.name === 'responseTimeout',
+		);
+
+		expect(
+			timeouts.map((entry) => [entry.displayName, entry.displayOptions?.show?.responseMode]),
+		).toEqual([
+			['Response Node Timeout (Seconds)', ['responseNode']],
+			['Workflow Timeout (Seconds)', ['lastNode']],
+		]);
+		// One name, so both variants read and write the same value
+		expect(timeouts.map((entry) => entry.default)).toEqual([60, 60]);
+	});
+
+	// The node has no input and is read on activation, so there is neither a `$json`
+	// to reference nor an execution to resolve an expression against.
+	it('offers no expression on any of its fields', () => {
+		const expressible = (entries: INodeProperties[], path = ''): string[] =>
+			entries.flatMap((entry) => {
+				const nested = (entry.options ?? []).flatMap((option) =>
+					typeof option === 'object' && 'values' in option
+						? expressible(option.values as INodeProperties[], `${path}${entry.name}.`)
+						: typeof option === 'object' && 'name' in option && 'type' in option
+							? expressible([option as INodeProperties], `${path}${entry.name}.`)
+							: [],
+				);
+				const self =
+					entry.type !== 'notice' && entry.noDataExpression !== true
+						? [`${path}${entry.name}`]
+						: [];
+				return [...self, ...nested];
+			});
+
+		expect(expressible(node.description.properties)).toEqual([]);
+	});
+});
+
+describe('authentication', () => {
+	it('rejects a call that does not satisfy the attached credential', async () => {
+		const { result, response } = await webhook({
+			credential: { type: 'headerAuth', headerName: 'X-API-KEY', headerValue: 'expected' },
 		});
-		expect(property('responseTimeout').default).toBe(60);
+
+		expect(result).toEqual({ noWebhookResponse: true });
+		expect(response.status).toBe(401);
+		expect(JSON.parse(response.payload as string)).toEqual({
+			success: false,
+			error: { message: 'Missing "X-API-KEY" header' },
+		});
+	});
+
+	it('answers a Basic challenge with the WWW-Authenticate header', async () => {
+		const { response } = await webhook({
+			credential: { type: 'basicAuth', user: 'ada', password: 'lovelace' },
+		});
+
+		expect(response.headers).toMatchObject({ 'WWW-Authenticate': 'Basic realm="Webhook"' });
+	});
+
+	it('passes the verified JWT payload on to the workflow', async () => {
+		const secret = 'a-shared-secret';
+		const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
+		const signingInput = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ sub: 'agent' })}`;
+		const signature = createHmac('sha256', secret).update(signingInput).digest('base64url');
+
+		const { result } = await webhook({
+			credential: { type: 'jwtAuth', keyType: 'passphrase', secret, algorithm: 'HS256' },
+			headers: { authorization: `Bearer ${signingInput}.${signature}` },
+		});
+
+		const [[item]] = result.workflowData as [[{ json: IDataObject }]];
+		expect(item.json.jwt).toEqual({ sub: 'agent' });
+	});
+
+	it('lets a credential problem surface as a node error', async () => {
+		// A headerAuth credential with no header name is misconfigured, not unauthorised
+		await expect(webhook({ credential: { type: 'headerAuth' } })).rejects.toThrow(
+			'The credential is missing a header name',
+		);
 	});
 });
 
@@ -271,8 +363,19 @@ describe('response timeout', () => {
 		expect(response.payload).toBe('{}');
 	});
 
-	it('does not arm a timer for the other response modes', async () => {
-		const { response } = await webhook({ params: { responseMode: 'lastNode' } });
+	it('answers 504 when the workflow itself does not finish in time', async () => {
+		const { response } = await webhook({
+			params: { responseMode: 'lastNode', responseTimeout: 30 },
+		});
+
+		vi.advanceTimersByTime(30_000);
+
+		expect(response.status).toBe(504);
+	});
+
+	// "Immediately" has already answered by the time the webhook returns.
+	it('does not arm a timer when the response is immediate', async () => {
+		const { response } = await webhook({ params: { responseMode: 'onReceived' } });
 
 		vi.advanceTimersByTime(3_600_000);
 

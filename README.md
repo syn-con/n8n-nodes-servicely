@@ -45,7 +45,7 @@ Create a **Servicely API** credential:
 
 Secrets are stored encrypted by n8n and are never written into workflow data.
 
-The **Servicely AI Tool Auth API** credential is separate and points the other way: it describes what an incoming tool call has to present (**Basic Auth**, **Header Auth**, or a **JWT** bearer token verified with a shared secret or a PEM public key). It is optional — a Servicely AI Tool without it accepts any caller. See [AI Tool](#ai-tool).
+The **Servicely AI Tool Auth API** credential is separate and points the other way: it describes what an incoming tool call has to present (**Basic Auth**, **Header Auth**, or a **JWT** bearer token verified with a shared secret or a PEM public key). See [AI Tool](#ai-tool).
 
 ## Operations
 
@@ -172,17 +172,32 @@ The **Servicely AI Tool** node turns a workflow into a tool the Servicely servic
 
 - **Name** — the name the tool is exported under in the service desk, e.g. `create_incident`.
 - **Prompt** — what the tool does and when to call it. Exported with the tool, so the agent reads it when deciding.
-- **AI Agents** — the agents the tool is exported to, a multi-select loaded from the instance's `SystemAIAgent` table: each entry is labelled by its **Name** and stored by its **Key**. Reading the list needs the **Servicely API** credential; an instance that cannot answer leaves the list empty, and the parameter stays reachable as an expression.
+- **AI Agents** — the agents the tool is exported to, a multi-select loaded from the instance's `SystemAIAgent` table: each entry is labelled by its **Name** and stored by its record id. Reading the list needs the **Servicely API** credential; an instance that cannot answer leaves the list empty. Activating the workflow links the tool to those agents (see below).
 - **Path** — the path the tool listens on, appended to the webhook base URL (the full path is served as given, without an internal webhook id).
 - **Parameters** — the tool's arguments. Each row is a **Param Name**, a **Param Type** (`String`, `Number`, `Integer`, `Boolean`; defaults to String) and a **Param Description** that is exported with the tool. Every declared parameter is required, and a call missing one is rejected.
 - **Respond** — *Using Servicely AI Tool Response Node* (default), *Immediately*, or *When Last Node Finishes*.
-- **Timeout (Seconds)** — only for the response-node mode: how long the caller waits before getting a `504`. The workflow keeps running; only the caller stops waiting. Default 60.
+- **Response Node Timeout (Seconds)** / **Workflow Timeout (Seconds)** — the same setting under the two waiting modes, named after what it waits for: the response node, or the last node finishing. How long the caller waits before getting a `504`; the workflow keeps running, only the caller stops waiting. Default 60. *Immediately* has already answered, so it shows no timeout.
 - **On Validation Error** — respond `400` with the errors (default), or run the workflow anyway and pass them on in `json.validation`.
 - **Options → Allow Unknown Parameters** (default on) and **Coerce Types** (default off, converts e.g. the string `"12"` to `12` before validating).
 
+None of the fields take an expression. The node has no input, and its values are read on activation — when there is no execution to resolve one against.
+
 The emitted item carries `body`, `parameters` (the declared arguments, after coercion), `headers`, `query`, `params`, `validation`, and — with a JWT credential — the verified `jwt` payload.
 
-The node takes two credentials: the **Servicely API** one (required — it backs the AI Agents list), and optionally a **Servicely AI Tool Auth API** one to require authentication on the endpoint itself. The JWT algorithm is taken from the credential, not from the token, so a caller cannot downgrade the signature.
+The node takes two credentials, both required: the **Servicely API** one (it backs the AI Agents list and the registration below) and a **Servicely AI Tool Auth API** one deciding what a caller has to present. The JWT algorithm is taken from the credential, not from the token, so a caller cannot downgrade the signature.
+
+### Registration in the service desk
+
+Activating the workflow registers it as a tool; deactivating removes it. n8n drives this through the webhook lifecycle hooks, so it happens on activate/deactivate — never on a manual execution.
+
+- **On activate** the registration is upserted against a `SystemAITool` record whose **Key** is the n8n workflow id: a new record gets `Key` = the workflow id, `Name` = `[n8n] <workflow name>`, `Active` = `true`, `SelectionPrompt` = the node's **Prompt**, `TimeoutSeconds` = the node's timeout and a generated `Description`, while an existing one is patched with the same fields minus the Key. That keeps activation idempotent — a record left behind by a deactivation that could not reach the instance, or a second AI Tool node in the same workflow, updates it instead of failing on a duplicate Key.
+- **The parameters follow the tool.** Each declared parameter becomes a `SystemAIToolParameter` row with `Name`, `Type`, `Description`, `Parent` = the tool's id, and `Order` counting from 10 in steps of 10. On a re-registration the rows are read back by `Parent` and reconciled by name: a new parameter is created, one whose type, description or position moved is patched, a row whose parameter the node no longer declares is deleted, and a row that already matches is left alone. Because `Order` comes from the declared order, reordering the collection in n8n reorders the tool's arguments. The API answers a query that matched nothing with a `404` rather than an empty list, so a `404` on the read back is taken as "no rows yet" — which is what every first registration sees; a `404` on the first *write* is the parameter table not being there under that name, and says so instead.
+- **The agents follow the selection.** The link lives on the agent — a `SystemAIAgent` holds a `Tools` array — so activation reads the agent table once and reconciles it: an agent you selected that does not hold the tool is patched to include it, an agent that holds it but is no longer selected is patched to drop it, and an agent already in the right state is not written at all. Linking and unlinking run as two tasks over two disjoint sets of agents, alongside the parameter sync. Entries are compared by id whether the instance stores them as bare ids, as references, or as a serialised list; a `404` on one agent's write is that agent having gone and is logged rather than failing the activation.
+- **On deactivate** the tool comes out of every agent's `Tools` first, so none is left pointing at a record that is about to go — a failure there is logged and the delete goes ahead anyway. The record is then looked up by that same Key and deleted if it is there. Nothing is cached between the hooks — the Key is the tool's whole identity, so a restart or a record edited in the service desk changes nothing about what the hooks find.
+- **"Listen for test event" registers the tool** like an activation does, so it can be exercised from the service desk while you are still building the workflow. Stopping the listen deliberately does *not* remove the registration: n8n tears a test webhook down exactly the way it deregisters a production one, and removing it there would deregister a workflow that is active at the same time.
+- Nothing left to remove is not treated as a failure, and removal never throws: n8n clears a workflow's webhooks on the way *into* activation as well, so a throw there would block activating the workflow too. Real failures (an expired token, a 500) are logged at error level instead.
+- The Key is the **workflow id**, so a workflow owns at most one tool record. A second Servicely AI Tool node in the same workflow finds the first one's record already there and registers nothing.
+- A workflow that has never been saved has no id yet, and activating it fails with "The workflow has no id yet".
 
 ### Servicely AI Tool Response
 
@@ -293,6 +308,8 @@ nodes/Servicely/
 nodes/ServicelyAITool/
   ServicelyAITool.node.ts          # webhook trigger: declares + serves the tool
   ServicelyAIToolResponse.node.ts  # answers the open request
+  registration.ts                  # webhookMethods: registers the tool + its parameters
+  parameters.ts                    # reads the declared parameters, for both sides
   validation.ts                    # the four parameter types, coercion, body check
   authentication.ts                # Basic / Header / JWT, per the attached credential
   jwt.ts                           # JWS verification (HS/RS/PS/ES), algorithm pinned

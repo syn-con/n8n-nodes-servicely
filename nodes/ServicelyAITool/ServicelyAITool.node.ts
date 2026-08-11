@@ -5,7 +5,6 @@ import {
 	type IWebhookFunctions,
 	type IWebhookResponseData,
 	NodeConnectionTypes,
-	NodeOperationError,
 } from 'n8n-workflow';
 
 import { getAiAgents } from '../Servicely/SearchFunctions';
@@ -16,31 +15,17 @@ import {
 	WebhookAuthorizationError,
 } from './authentication';
 import {
-	type ParameterDefinition,
-	type ParameterType,
-	isPlainObject,
-	validateBody,
-} from './validation';
+	DEFAULT_RESPONSE_TIMEOUT_SECONDS,
+	readParameterDefinitions,
+	readResponseTimeoutSeconds,
+} from './parameters';
+import { toolRegistrationMethods } from './registration';
+import { isPlainObject, validateBody } from './validation';
 
 /** The still open HTTP response of the request that started the workflow. */
 type WebhookResponse = ReturnType<IWebhookFunctions['getResponseObject']>;
 
-/** One row of the Parameters collection, as the UI stores it. */
-interface ParameterRow {
-	paramName?: string;
-	paramType?: ParameterType | '';
-	paramDescription?: string;
-}
-
-interface ParameterCollection {
-	values?: ParameterRow[];
-}
-
-const PARAMETER_TYPES: ParameterType[] = ['boolean', 'integer', 'number', 'string'];
-
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
-
-const DEFAULT_RESPONSE_TIMEOUT_SECONDS = 60;
 
 /**
  * Exposes a workflow as a tool a Servicely service desk agent can call. The node
@@ -74,9 +59,9 @@ export class ServicelyAITool implements INodeType {
 				required: true,
 			},
 			{
-				// Optional on purpose: without a credential the endpoint takes any caller
+				// Decides what a caller has to present; the endpoint is never public
 				name: AUTH_CREDENTIAL_NAME,
-				required: false,
+				required: true,
 			},
 		],
 		webhooks: [
@@ -92,10 +77,15 @@ export class ServicelyAITool implements INodeType {
 				responseData: '={{$parameter["responseMode"] === "lastNode" ? "firstEntryJson" : ""}}',
 			},
 		],
+		// `noDataExpression` on every field, deliberately. This node defines a tool
+		// rather than processing items: it has no input, so there is no `$json` to
+		// reference, and its values are read on activation — when no execution is
+		// running to resolve an expression against. A field that cannot be expressed
+		// says so in the UI instead of resolving to nothing at registration time.
 		properties: [
 			{
 				displayName:
-					'Attach a Servicely AI Tool Auth credential to require Basic, Header or JWT authentication. Without a credential this endpoint accepts any caller.',
+					'The attached Servicely AI Tool Auth credential decides what a caller has to present: Basic, Header or JWT authentication.',
 				name: 'authenticationNotice',
 				type: 'notice',
 				default: '',
@@ -104,6 +94,7 @@ export class ServicelyAITool implements INodeType {
 				displayName: 'Name',
 				name: 'toolName',
 				type: 'string',
+				noDataExpression: true,
 				default: '',
 				placeholder: 'e.g. create_incident',
 				required: true,
@@ -113,6 +104,7 @@ export class ServicelyAITool implements INodeType {
 				displayName: 'Prompt',
 				name: 'prompt',
 				type: 'string',
+				noDataExpression: true,
 				typeOptions: {
 					rows: 3,
 				},
@@ -126,17 +118,19 @@ export class ServicelyAITool implements INodeType {
 				displayName: 'AI Agents',
 				name: 'aiAgents',
 				type: 'multiOptions',
+				noDataExpression: true,
 				typeOptions: {
 					loadOptionsMethod: 'getAiAgents',
 				},
 				default: [],
 				description:
-					'The Servicely AI agents this tool is exported to. The list shows SystemAIAgent records by Name; each agent is stored by its Key. Choose from the list, or specify keys using an expression.',
+					'The Servicely AI agents this tool is exported to. The list shows SystemAIAgent records by Name; each agent is stored by its record ID. Activating the workflow adds the tool to those agents\' Tools, and takes it out of the agents you deselect.',
 			},
 			{
 				displayName: 'Path',
 				name: 'path',
 				type: 'string',
+				noDataExpression: true,
 				default: '',
 				placeholder: 'e.g. create-incident',
 				required: true,
@@ -147,6 +141,7 @@ export class ServicelyAITool implements INodeType {
 				name: 'parameters',
 				placeholder: 'Add Parameter',
 				type: 'fixedCollection',
+				noDataExpression: true,
 				typeOptions: {
 					multipleValues: true,
 					sortable: true,
@@ -163,6 +158,7 @@ export class ServicelyAITool implements INodeType {
 								displayName: 'Param Name',
 								name: 'paramName',
 								type: 'string',
+								noDataExpression: true,
 								default: '',
 								placeholder: 'e.g. customerId',
 								description: 'Name of the argument, as the agent has to send it',
@@ -172,6 +168,7 @@ export class ServicelyAITool implements INodeType {
 								displayName: 'Param Type',
 								name: 'paramType',
 								type: 'options',
+								noDataExpression: true,
 								options: [
 									{
 										name: 'Boolean',
@@ -201,6 +198,7 @@ export class ServicelyAITool implements INodeType {
 								displayName: 'Param Description',
 								name: 'paramDescription',
 								type: 'string',
+								noDataExpression: true,
 								default: '',
 								placeholder: 'e.g. ID of the customer the incident is raised for',
 								description: 'What this argument means. Exported with the tool.',
@@ -213,6 +211,7 @@ export class ServicelyAITool implements INodeType {
 				displayName: 'Respond',
 				name: 'responseMode',
 				type: 'options',
+				noDataExpression: true,
 				options: [
 					{
 						name: 'Using Servicely AI Tool Response Node',
@@ -234,10 +233,15 @@ export class ServicelyAITool implements INodeType {
 				default: 'responseNode',
 				description: 'When and how to respond to the calling agent',
 			},
+			// Both waiting modes bound the same value, but they wait for different things,
+			// so each states what it waits for. Two properties under one name is how a
+			// title can differ per mode: the displayOptions are disjoint, so only ever
+			// one of them is shown, and both read and write `responseTimeout`.
 			{
-				displayName: 'Timeout (Seconds)',
+				displayName: 'Response Node Timeout (Seconds)',
 				name: 'responseTimeout',
 				type: 'number',
+				noDataExpression: true,
 				typeOptions: {
 					minValue: 1,
 					maxValue: 3600,
@@ -248,9 +252,24 @@ export class ServicelyAITool implements INodeType {
 				displayOptions: { show: { responseMode: ['responseNode'] } },
 			},
 			{
+				displayName: 'Workflow Timeout (Seconds)',
+				name: 'responseTimeout',
+				type: 'number',
+				noDataExpression: true,
+				typeOptions: {
+					minValue: 1,
+					maxValue: 3600,
+				},
+				default: DEFAULT_RESPONSE_TIMEOUT_SECONDS,
+				description:
+					'How long to wait for the last node to finish. When the workflow does not finish in time the caller gets a 504, while the workflow keeps running.',
+				displayOptions: { show: { responseMode: ['lastNode'] } },
+			},
+			{
 				displayName: 'On Validation Error',
 				name: 'onValidationError',
 				type: 'options',
+				noDataExpression: true,
 				options: [
 					{
 						name: 'Respond 400 Bad Request',
@@ -271,6 +290,7 @@ export class ServicelyAITool implements INodeType {
 				displayName: 'Options',
 				name: 'options',
 				type: 'collection',
+				noDataExpression: true,
 				placeholder: 'Add option',
 				default: {},
 				options: [
@@ -278,6 +298,7 @@ export class ServicelyAITool implements INodeType {
 						displayName: 'Allow Unknown Parameters',
 						name: 'allowUnknownParameters',
 						type: 'boolean',
+						noDataExpression: true,
 						default: true,
 						description:
 							'Whether body properties that are not defined above are accepted. If turned off, they are reported as validation errors.',
@@ -286,6 +307,7 @@ export class ServicelyAITool implements INodeType {
 						displayName: 'Coerce Types',
 						name: 'coerceTypes',
 						type: 'boolean',
+						noDataExpression: true,
 						default: false,
 						description:
 							'Whether values are converted to the defined type before validation, e.g. the string "12" to the number 12. Useful for form encoded bodies.',
@@ -295,8 +317,13 @@ export class ServicelyAITool implements INodeType {
 		],
 	};
 
+
+
 	/** Only the agent loader: the pickers of the Servicely node have no counterpart here. */
 	methods = { loadOptions: { getAiAgents } };
+
+	/** Registers the tool in the service desk on activation, removes it on deactivation. */
+	webhookMethods = toolRegistrationMethods;
 
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
 		const onValidationError = this.getNodeParameter('onValidationError') as
@@ -321,19 +348,19 @@ export class ServicelyAITool implements INodeType {
 			throw error;
 		}
 
-		const definitions = getParameterDefinitions(this);
+		const definitions = readParameterDefinitions(this);
 		const body = this.getBodyData();
 
 		const result = isPlainObject(body)
 			? validateBody(body, definitions, {
-					allowUnknownParameters: options.allowUnknownParameters ?? true,
-					coerceTypes: options.coerceTypes ?? false,
-				})
+				allowUnknownParameters: options.allowUnknownParameters ?? true,
+				coerceTypes: options.coerceTypes ?? false,
+			})
 			: {
-					valid: false,
-					errors: [{ key: '', message: 'The request body must be a JSON object' }],
-					parameters: {},
-				};
+				valid: false,
+				errors: [{ key: '', message: 'The request body must be a JSON object' }],
+				parameters: {},
+			};
 
 		if (!result.valid && onValidationError === 'respondError') {
 			response.writeHead(400, JSON_HEADERS);
@@ -346,13 +373,13 @@ export class ServicelyAITool implements INodeType {
 			return { noWebhookResponse: true };
 		}
 
-		// The response node answers whenever the workflow reaches it, which may be never.
-		// The timer bounds how long the agent is left hanging.
-		if ((this.getNodeParameter('responseMode') as string) === 'responseNode') {
-			scheduleResponseTimeout(
-				response,
-				this.getNodeParameter('responseTimeout', DEFAULT_RESPONSE_TIMEOUT_SECONDS) as number,
-			);
+		// Both waiting modes can leave the caller hanging: the response node answers
+		// whenever the workflow reaches it, which may be never, and the last node
+		// finishes whenever the workflow does. The timer bounds either wait. The
+		// "Immediately" mode has answered by the time this returns, so it needs none.
+		const responseMode = this.getNodeParameter('responseMode') as string;
+		if (responseMode === 'responseNode' || responseMode === 'lastNode') {
+			scheduleResponseTimeout(response, readResponseTimeoutSeconds(this));
 		}
 
 		const json: IDataObject = {
@@ -403,36 +430,3 @@ function scheduleResponseTimeout(response: WebhookResponse, seconds: number): vo
 	response.on('close', () => clearTimeout(timer));
 }
 
-function getParameterDefinitions(context: IWebhookFunctions): ParameterDefinition[] {
-	const collection = context.getNodeParameter('parameters', {}) as ParameterCollection;
-	const definitions: ParameterDefinition[] = [];
-	const seen = new Set<string>();
-
-	for (const row of collection.values ?? []) {
-		// `||` and not `??`: an unset field resolves to an empty string, not to undefined
-		const key = (row.paramName || '').trim();
-		if (!key) {
-			throw new NodeOperationError(context.getNode(), 'A parameter is defined without a name');
-		}
-		if (seen.has(key)) {
-			throw new NodeOperationError(
-				context.getNode(),
-				`The parameter "${key}" is defined more than once`,
-			);
-		}
-		seen.add(key);
-
-		const type = row.paramType || 'string';
-		if (!PARAMETER_TYPES.includes(type)) {
-			throw new NodeOperationError(
-				context.getNode(),
-				`The parameter "${key}" has an unknown type "${type}"`,
-				{ description: `Use one of: ${PARAMETER_TYPES.join(', ')}.` },
-			);
-		}
-
-		definitions.push({ key, type, description: (row.paramDescription || '').trim() });
-	}
-
-	return definitions;
-}
