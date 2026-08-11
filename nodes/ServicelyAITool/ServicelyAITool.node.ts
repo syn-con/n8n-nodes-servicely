@@ -40,7 +40,8 @@ export class ServicelyAITool implements INodeType {
 		icon: { light: 'file:../../icons/servicely.svg', dark: 'file:../../icons/servicely.dark.svg' },
 		group: ['trigger'],
 		version: 1,
-		subtitle: '={{$parameter["toolName"] || "POST /" + $parameter["path"]}}',
+		// The tool is named after the workflow, so the path is what identifies this node
+		subtitle: '={{"POST /" + $parameter["path"]}}',
 		description: 'Expose this workflow as a tool for the Servicely service desk agent',
 		documentationUrl: 'https://docs-servicely.atlassian.net/wiki/spaces/SD/pages/2077523978',
 		eventTriggerDescription: 'Waiting for the agent to call the tool',
@@ -91,16 +92,6 @@ export class ServicelyAITool implements INodeType {
 				name: 'authenticationNotice',
 				type: 'notice',
 				default: '',
-			},
-			{
-				displayName: 'Name',
-				name: 'toolName',
-				type: 'string',
-				noDataExpression: true,
-				default: '',
-				placeholder: 'e.g. create_incident',
-				required: true,
-				description: 'Name this tool is exported under in the Servicely service desk',
 			},
 			{
 				displayName: 'Prompt',

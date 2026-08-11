@@ -49,7 +49,6 @@ function makeResponseStub() {
 type ResponseStub = ReturnType<typeof makeResponseStub>;
 
 const DEFAULTS: IDataObject = {
-	toolName: 'create_incident',
 	prompt: 'Creates an incident',
 	path: 'create-incident',
 	responseMode: 'onReceived',
@@ -131,14 +130,17 @@ describe('node description', () => {
 		]);
 	});
 
-	it('asks for the tool name and prompt before anything else', () => {
+	// The tool is registered under the workflow's name, so the node asks for no
+	// name of its own.
+	it('asks for the prompt before anything else, and for no tool name', () => {
 		const named = node.description.properties
 			.filter((entry) => entry.type !== 'notice')
 			.map((entry) => entry.name);
 
-		expect(named.slice(0, 4)).toEqual(['toolName', 'prompt', 'aiAgents', 'path']);
-		expect(property('toolName').required).toBe(true);
+		expect(named.slice(0, 3)).toEqual(['prompt', 'aiAgents', 'path']);
+		expect(named).not.toContain('toolName');
 		expect(property('prompt').required).toBe(true);
+		expect(node.description.subtitle).toBe('={{"POST /" + $parameter["path"]}}');
 	});
 
 	it('loads the AI Agents multi-select from the SystemAIAgent registry', () => {

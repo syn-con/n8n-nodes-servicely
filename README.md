@@ -170,7 +170,8 @@ The **Servicely AI Tool** node turns a workflow into a tool the Servicely servic
 
 ### Servicely AI Tool (trigger)
 
-- **Name** — the name the tool is exported under in the service desk, e.g. `create_incident`.
+The tool is exported under the **workflow's** name (as `[n8n] <workflow name>`), so the node asks for no name of its own — rename the workflow and the next activation renames the tool.
+
 - **Prompt** — what the tool does and when to call it. Exported with the tool, so the agent reads it when deciding.
 - **AI Agents** — the agents the tool is exported to, a multi-select loaded from the instance's `SystemAIAgent` table: each entry is labelled by its **Name** and stored by its record id. Reading the list needs the **Servicely API** credential; an instance that cannot answer leaves the list empty. Activating the workflow links the tool to those agents (see below).
 - **Path** — the path the tool listens on, appended to the webhook base URL (the full path is served as given, without an internal webhook id).
