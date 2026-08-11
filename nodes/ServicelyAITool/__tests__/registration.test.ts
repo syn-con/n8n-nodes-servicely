@@ -1,7 +1,11 @@
 import type { IDataObject, IHookFunctions } from 'n8n-workflow';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { PRODUCTION_PARAMETER } from '../parameters';
 import { checkToolExists, createTool, deleteTool } from '../registration';
+
+/** The wording of the flag every tool carries, as the agent reads it. */
+const PRODUCTION_DESCRIPTION = PRODUCTION_PARAMETER.description;
 
 interface HookStubOptions {
 	/** Responses handed out in order; the last one repeats. */
@@ -268,6 +272,8 @@ describe('create', () => {
 			'POST /v1/SystemAITool',
 			'GET /v1/SystemAITool',
 			'GET /v1/SystemAIToolParameter',
+			// The IsProduction row every tool gets
+			'POST /v1/SystemAIToolParameter',
 		]);
 	});
 
@@ -300,7 +306,7 @@ describe('parameter sync', () => {
 		await createTool.call(ctx);
 
 		const writes = ctx.calls.filter((call) => call.url.startsWith('/v1/SystemAIToolParameter'));
-		expect(writes.map((call) => call.method)).toEqual(['GET', 'POST', 'POST']);
+		expect(writes.map((call) => call.method)).toEqual(['GET', 'POST', 'POST', 'POST']);
 		expect(writes[1].body).toEqual({
 			Name: 'ticketId',
 			Type: 'string',
@@ -313,6 +319,25 @@ describe('parameter sync', () => {
 			Type: 'integer',
 			Description: 'How urgent',
 			Order: 20,
+			Parent: 'tool-9',
+		});
+		// Appended last, so declaring a parameter later does not reorder it
+		expect(writes[3].body).toMatchObject({ Name: 'IsProduction', Type: 'boolean', Order: 30 });
+	});
+
+	it('writes the IsProduction row for a tool that declares nothing', async () => {
+		const ctx = ctxFor([]);
+
+		await createTool.call(ctx);
+
+		const writes = ctx.calls.filter((call) => call.method === 'POST');
+		expect(writes).toHaveLength(1);
+		expect(writes[0].body).toEqual({
+			Name: 'IsProduction',
+			Type: 'boolean',
+			Description:
+				'Whether this call is for real. Always send true, unless the user explicitly asked to run in test mode — then send false.',
+			Order: 10,
 			Parent: 'tool-9',
 		});
 	});
@@ -332,12 +357,22 @@ describe('parameter sync', () => {
 
 	it('leaves a row that already matches untouched', async () => {
 		const ctx = ctxFor(
-			[{ id: 'p1', Name: 'ticketId', Type: 'string', Description: 'Which ticket', Order: 10 }],
+			[
+				{ id: 'p1', Name: 'ticketId', Type: 'string', Description: 'Which ticket', Order: 10 },
+				{
+					id: 'p2',
+					Name: 'IsProduction',
+					Type: 'boolean',
+					Description: PRODUCTION_DESCRIPTION,
+					Order: 20,
+				},
+			],
 			{ parameters: declares({ name: 'ticketId', type: 'string', description: 'Which ticket' }) },
 		);
 
 		await createTool.call(ctx);
 
+		// The lookup, and no write at all
 		expect(ctx.calls.filter((call) => call.url.startsWith('/v1/SystemAIToolParameter'))).toHaveLength(
 			1,
 		);
@@ -446,12 +481,14 @@ describe('parameter sync', () => {
 				ok([TOOL]),
 				ok(TOOL),
 				ok([{ id: 'p1', Name: 'dropped', Type: 'string', Order: 10 }]),
+				// The IsProduction row is written before anything stale is removed
+				ok({ id: 'p2' }),
 				notFound,
 			],
 		});
 
 		await expect(createTool.call(ctx)).resolves.toBe(true);
-		expect(ctx.calls[3]).toMatchObject({ method: 'DELETE', url: '/v1/SystemAIToolParameter/p1' });
+		expect(ctx.calls[4]).toMatchObject({ method: 'DELETE', url: '/v1/SystemAIToolParameter/p1' });
 		expect(ctx.warnings.join()).toContain('no longer there');
 	});
 

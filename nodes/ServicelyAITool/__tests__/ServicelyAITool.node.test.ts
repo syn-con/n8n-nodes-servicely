@@ -67,7 +67,9 @@ function makeWebhookCtx(options: WebhookStubOptions = {}) {
 		getNodeParameter: (name: string, fallback?: unknown) =>
 			name in params ? params[name] : fallback,
 		getResponseObject: () => response,
-		getBodyData: () => options.body ?? {},
+		// Every tool declares IsProduction, so a body without it fails validation —
+		// the cases that are not about validation send the flag and nothing else
+		getBodyData: () => options.body ?? { IsProduction: true },
 		getHeaderData: () => ({ 'content-type': 'application/json' }),
 		getQueryData: () => ({}),
 		getParamsData: () => ({}),
@@ -112,8 +114,12 @@ describe('node description', () => {
 		expect(node.description.inputs).toEqual([]);
 		expect(node.description.webhooks?.[0].httpMethod).toBe('POST');
 		expect(node.description.credentials).toEqual([
-			{ name: 'servicelyApi', required: true },
-			{ name: 'servicelyAiToolAuthApi', required: true },
+			{ name: 'servicelyApi', displayName: 'Servicely API', required: true },
+			{
+				name: 'servicelyAiToolAuthApi',
+				displayName: 'Servicely AI Tool Auth',
+				required: true,
+			},
 		]);
 	});
 
@@ -242,31 +248,32 @@ describe('validation', () => {
 			params: {
 				parameters: { values: [parameterRow('count', 'integer', 'How many')] },
 			},
-			body: { count: 2, extra: 'kept in body' },
+			body: { count: 2, IsProduction: true, extra: 'kept in body' },
 		});
 
 		expect(response.headersSent).toBe(false);
 		const [[item]] = result.workflowData as [[{ json: IDataObject }]];
-		expect(item.json.parameters).toEqual({ count: 2 });
-		expect(item.json.body).toEqual({ count: 2, extra: 'kept in body' });
+		expect(item.json.parameters).toEqual({ count: 2, IsProduction: true });
+		expect(item.json.body).toEqual({ count: 2, IsProduction: true, extra: 'kept in body' });
 		expect(item.json.validation).toEqual({ valid: true, errors: [] });
 	});
 
 	it('defaults an unset parameter type to string', async () => {
 		const { result } = await webhook({
 			params: { parameters: { values: [parameterRow('who')] } },
-			body: { who: 'ada' },
+			body: { who: 'ada', IsProduction: false },
 		});
 
 		expect((result.workflowData as [[{ json: IDataObject }]])[0][0].json.parameters).toEqual({
 			who: 'ada',
+			IsProduction: false,
 		});
 	});
 
 	it('rejects a missing parameter with 400 and does not start the workflow', async () => {
 		const { result, response } = await webhook({
 			params: { parameters: { values: [parameterRow('count', 'integer')] } },
-			body: {},
+			body: { IsProduction: true },
 		});
 
 		expect(result).toEqual({ noWebhookResponse: true });
@@ -286,7 +293,7 @@ describe('validation', () => {
 				onValidationError: 'continue',
 				parameters: { values: [parameterRow('count', 'integer')] },
 			},
-			body: {},
+			body: { IsProduction: true },
 		});
 
 		const [[item]] = result.workflowData as [[{ json: IDataObject }]];
@@ -294,6 +301,44 @@ describe('validation', () => {
 			valid: false,
 			errors: [{ key: 'count', message: 'Parameter "count" is required' }],
 		});
+	});
+
+	// Every tool carries it, so a workflow can tell a real call from a rehearsal
+	// without each tool having to declare it.
+	it('declares IsProduction on top of the node\'s own parameters', async () => {
+		const { result, response } = await webhook({
+			params: { parameters: { values: [parameterRow('count', 'integer')] } },
+			body: { count: 2 },
+		});
+
+		expect(response.status).toBe(400);
+		expect(JSON.parse(response.payload as string).error.details).toEqual([
+			{ key: 'IsProduction', message: 'Parameter "IsProduction" is required' },
+		]);
+		expect(result).toEqual({ noWebhookResponse: true });
+	});
+
+	it('takes only a boolean for IsProduction', async () => {
+		const { response } = await webhook({ body: { IsProduction: 'yes' } });
+
+		expect(JSON.parse(response.payload as string).error.details).toEqual([
+			{
+				key: 'IsProduction',
+				message: 'Parameter "IsProduction" must be a boolean, but a string was received',
+			},
+		]);
+	});
+
+	it('lets the node declare its own IsProduction instead', async () => {
+		const { result } = await webhook({
+			params: {
+				parameters: { values: [parameterRow('IsProduction', 'string', 'The environment')] },
+			},
+			body: { IsProduction: 'staging' },
+		});
+
+		const [[item]] = result.workflowData as [[{ json: IDataObject }]];
+		expect(item.json.parameters).toEqual({ IsProduction: 'staging' });
 	});
 
 	it('rejects a body that is not a JSON object', async () => {

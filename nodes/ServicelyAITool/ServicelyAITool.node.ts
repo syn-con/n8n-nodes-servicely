@@ -150,7 +150,7 @@ export class ServicelyAITool implements INodeType {
 				},
 				default: {},
 				description:
-					'The arguments of the tool. They are exported with it and every request is validated against them.',
+					'The arguments of the tool. They are exported with it and every request is validated against them. A boolean IsProduction is always exported on top of these — the agent sends true unless it was asked for a test run — and declaring one here replaces it.',
 				options: [
 					{
 						name: 'values',

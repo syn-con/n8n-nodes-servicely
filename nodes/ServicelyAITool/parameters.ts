@@ -26,6 +26,22 @@ export const PARAMETER_TYPES: ParameterType[] = ['boolean', 'integer', 'number',
 export const DEFAULT_RESPONSE_TIMEOUT_SECONDS = 60;
 
 /**
+ * The flag every tool carries on top of what the node declares, so a workflow can
+ * tell a real call from a rehearsal without each tool having to define it. The
+ * description is what the agent reads when it decides what to send, so it states
+ * the default outright: true unless the person asked for a test run.
+ *
+ * A node that declares a parameter of the same name replaces it — its own wording
+ * for a flag it already knows about beats this one.
+ */
+export const PRODUCTION_PARAMETER: ParameterDefinition = {
+	key: 'IsProduction',
+	type: 'boolean',
+	description:
+		'Whether this call is for real. Always send true, unless the user explicitly asked to run in test mode — then send false.',
+};
+
+/**
  * The contexts that read parameters: `IWebhookFunctions` on a call and
  * `IHookFunctions` on activation. Both expose the same two members, so the
  * narrow structural type covers them without naming either.
@@ -33,7 +49,9 @@ export const DEFAULT_RESPONSE_TIMEOUT_SECONDS = 60;
 type ParameterContext = Pick<IHookFunctions, 'getNode' | 'getNodeParameter'>;
 
 /**
- * The tool's parameters, in the order the node declares them.
+ * The tool's parameters, in the order the node declares them, with
+ * {@link PRODUCTION_PARAMETER} appended — last, so adding it to a tool that is
+ * already registered leaves the order of everything else alone.
  *
  * @throws {NodeOperationError} on a row with no name, a duplicate name, or a type
  * outside {@link PARAMETER_TYPES}
@@ -67,6 +85,10 @@ export function readParameterDefinitions(context: ParameterContext): ParameterDe
 		}
 
 		definitions.push({ key, type, description: (row.paramDescription || '').trim() });
+	}
+
+	if (!seen.has(PRODUCTION_PARAMETER.key)) {
+		definitions.push(PRODUCTION_PARAMETER);
 	}
 
 	return definitions;
