@@ -11,11 +11,12 @@ import { servicelyApiRequest, toRecordList } from './GenericFunctions';
 import type { ServicelyRecord } from './types';
 
 /**
- * The dynamic-option loaders both nodes expose: `methods.listSearch` backing the
- * "From List" mode of every resourceLocator (the Table, Field, and Record
- * pickers on the Servicely node, the Queue / Action Name pickers on the
- * trigger), plus the one `methods.loadOptions` entry — `getFields` — that feeds
- * the field dropdowns in the Options collections.
+ * The dynamic-option loaders the package's nodes expose: `methods.listSearch`
+ * backing the "From List" mode of every resourceLocator (the Table, Field, and
+ * Record pickers on the Servicely node, the Queue / Action Name pickers on the
+ * trigger), plus the `methods.loadOptions` entries feeding the multi-selects —
+ * `getFields` for the field dropdowns in the Options collections, `getAiAgents`
+ * for the AI Tool node's AI Agents selector.
  *
  * Every searchable picker is paginated: n8n calls the method with the
  * `paginationToken` from the previous result once the user scrolls past the
@@ -171,7 +172,16 @@ const FIELD_TABLE_FIELD = 'Table';
 /** `FieldDefinition` field holding the API name of the field itself. */
 const FIELD_NAME_FIELD = 'FieldName';
 
-/** Both registries are small, so they are read in large pages. */
+/** The instance's AI agents, offered by the AI Tool node's AI Agents selector. */
+const AI_AGENT_TABLE = 'SystemAIAgent';
+
+/** `SystemAIAgent` field holding the identifier an agent is stored and exported under. */
+const AI_AGENT_KEY_FIELD = 'Key';
+
+/** `SystemAIAgent` field holding the agent's display name. */
+const AI_AGENT_NAME_FIELD = 'Name';
+
+/** These registries are small, so they are read in large pages. */
 const DISCOVERY_PAGE_SIZE = 2000;
 
 /**
@@ -480,9 +490,38 @@ export async function getFields(this: ILoadOptionsFunctions): Promise<INodePrope
   return fields.map((field) => ({ name: field.name, value: String(field.value) }));
 }
 
+/**
+ * The instance's AI agents (`SystemAIAgent`), backing the AI Tool node's **AI
+ * Agents** multi-select. The stored value is each agent's `Key` — the stable
+ * identifier the service desk knows an agent by — while the label is its `Name`.
+ * Rows carrying no Key are skipped, since there would be nothing to store.
+ *
+ * A registry that cannot be read leaves the list empty rather than failing the
+ * dropdown; the parameter then stays reachable as an expression.
+ */
+export async function getAiAgents(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+  let rows: ServicelyRecord[];
+  try {
+    rows = await allRows(this, AI_AGENT_TABLE, DISCOVERY_PAGE_SIZE);
+  } catch {
+    return [];
+  }
+
+  const byKey = new Map<string, INodePropertyOptions>();
+  for (const row of rows) {
+    const key = fieldString(row, AI_AGENT_KEY_FIELD)?.trim();
+    if (key === undefined || byKey.has(key)) {
+      continue;
+    }
+    byKey.set(key, { name: fieldString(row, AI_AGENT_NAME_FIELD) ?? key, value: key });
+  }
+  return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /** The `methods` block attached to both nodes. */
 export const listSearchMethods = {
   loadOptions: {
+    getAiAgents,
     getFields,
   },
   listSearch: {

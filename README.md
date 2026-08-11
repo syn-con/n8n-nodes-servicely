@@ -172,6 +172,7 @@ The **Servicely AI Tool** node turns a workflow into a tool the Servicely servic
 
 - **Name** — the name the tool is exported under in the service desk, e.g. `create_incident`.
 - **Prompt** — what the tool does and when to call it. Exported with the tool, so the agent reads it when deciding.
+- **AI Agents** — the agents the tool is exported to, a multi-select loaded from the instance's `SystemAIAgent` table: each entry is labelled by its **Name** and stored by its **Key**. Reading the list needs the **Servicely API** credential; an instance that cannot answer leaves the list empty, and the parameter stays reachable as an expression.
 - **Path** — the path the tool listens on, appended to the webhook base URL (the full path is served as given, without an internal webhook id).
 - **Parameters** — the tool's arguments. Each row is a **Param Name**, a **Param Type** (`String`, `Number`, `Integer`, `Boolean`; defaults to String) and a **Param Description** that is exported with the tool. Every declared parameter is required, and a call missing one is rejected.
 - **Respond** — *Using Servicely AI Tool Response Node* (default), *Immediately*, or *When Last Node Finishes*.
@@ -181,7 +182,7 @@ The **Servicely AI Tool** node turns a workflow into a tool the Servicely servic
 
 The emitted item carries `body`, `parameters` (the declared arguments, after coercion), `headers`, `query`, `params`, `validation`, and — with a JWT credential — the verified `jwt` payload.
 
-Attach a **Servicely AI Tool Auth API** credential to require authentication. The JWT algorithm is taken from the credential, not from the token, so a caller cannot downgrade the signature.
+The node takes two credentials: the **Servicely API** one (required — it backs the AI Agents list), and optionally a **Servicely AI Tool Auth API** one to require authentication on the endpoint itself. The JWT algorithm is taken from the credential, not from the token, so a caller cannot downgrade the signature.
 
 ### Servicely AI Tool Response
 
@@ -217,7 +218,7 @@ Attach a **Servicely AI Tool Auth API** credential to require authentication. Th
 
 **Expose a workflow as an agent tool**
 
-1. **Servicely AI Tool**, Name `create_incident`, Prompt "Creates an incident for a user and returns its number", Path `create-incident`.
+1. **Servicely AI Tool**, Name `create_incident`, Prompt "Creates an incident for a user and returns its number", AI Agents = the service desk agent, Path `create-incident`.
 2. *Parameters:* `shortDescription` (String, "What is wrong"), `priority` (Integer, "1 highest to 4 lowest").
 3. **Servicely → Object → Create**, Table `Incident`, fields taken from `={{ $json.parameters.shortDescription }}` and `={{ $json.parameters.priority }}`.
 4. **Servicely AI Tool Response**, Respond With *Success*, Data *First Incoming Item*.

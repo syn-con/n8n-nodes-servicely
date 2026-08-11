@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   discoverFields,
   discoverTables,
+  getAiAgents,
   getFields,
   listSearchMethods,
   searchActions,
@@ -59,7 +60,7 @@ describe('listSearchMethods', () => {
   });
 
   it('exposes every loadOptions method the descriptions reference', () => {
-    expect(Object.keys(listSearchMethods.loadOptions).sort()).toEqual(['getFields']);
+    expect(Object.keys(listSearchMethods.loadOptions).sort()).toEqual(['getAiAgents', 'getFields']);
   });
 });
 
@@ -258,6 +259,51 @@ describe('getFields', () => {
 
     await expect(getFields.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([]);
     expect(http.count()).toBe(0);
+  });
+});
+
+describe('getAiAgents', () => {
+  it('reads SystemAIAgent, labelling by Name and storing the Key, sorted', async () => {
+    const { ctx, http } = ctxFor([
+      ok([
+        { id: 'a1', Name: 'Service Desk Agent', Key: 'service_desk' },
+        { id: 'a2', Name: 'Approvals Agent', Key: 'approvals' },
+      ]),
+    ]);
+
+    await expect(getAiAgents.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([
+      { name: 'Approvals Agent', value: 'approvals' },
+      { name: 'Service Desk Agent', value: 'service_desk' },
+    ]);
+    expect(http.calls[0].options.url).toBe('/v1/SystemAIAgent');
+    expect(http.calls[0].options.qs).toEqual({ page: 1, page_size: DISCOVERY_PAGE_SIZE });
+  });
+
+  it('dedupes repeated keys and falls back to the key when a row has no name', async () => {
+    const { ctx } = ctxFor([
+      ok([
+        { id: 'a1', Key: 'approvals' },
+        { id: 'a2', Name: 'Second Approvals', Key: 'approvals' },
+      ]),
+    ]);
+
+    await expect(getAiAgents.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([
+      { name: 'approvals', value: 'approvals' },
+    ]);
+  });
+
+  it('skips rows without a key', async () => {
+    const { ctx } = ctxFor([ok([{ id: 'a1', Name: 'Keyless' }, { id: 'a2', Name: 'Ok', Key: 'ok' }])]);
+
+    await expect(getAiAgents.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([
+      { name: 'Ok', value: 'ok' },
+    ]);
+  });
+
+  it('leaves the list empty when the table cannot be read', async () => {
+    const { ctx } = ctxFor([{ status: 500, body: { message: 'boom' } }]);
+
+    await expect(getAiAgents.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([]);
   });
 });
 

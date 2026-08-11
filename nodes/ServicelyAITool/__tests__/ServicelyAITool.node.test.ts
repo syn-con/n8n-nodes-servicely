@@ -1,6 +1,7 @@
 import type { IDataObject, INodeProperties, IWebhookFunctions } from 'n8n-workflow';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getAiAgents } from '../../Servicely/SearchFunctions';
 import { ServicelyAITool } from '../ServicelyAITool.node';
 
 const node = new ServicelyAITool();
@@ -97,11 +98,12 @@ const parameterRow = (name: string, type?: string, description?: string) => ({
 });
 
 describe('node description', () => {
-	it('is a POST webhook trigger with an optional auth credential', () => {
+	it('is a POST webhook trigger that reads the instance and takes an optional auth credential', () => {
 		expect(node.description.name).toBe('servicelyAiTool');
 		expect(node.description.inputs).toEqual([]);
 		expect(node.description.webhooks?.[0].httpMethod).toBe('POST');
 		expect(node.description.credentials).toEqual([
+			{ name: 'servicelyApi', required: true },
 			{ name: 'servicelyAiToolAuthApi', required: false },
 		]);
 	});
@@ -111,9 +113,16 @@ describe('node description', () => {
 			.filter((entry) => entry.type !== 'notice')
 			.map((entry) => entry.name);
 
-		expect(named.slice(0, 3)).toEqual(['toolName', 'prompt', 'path']);
+		expect(named.slice(0, 4)).toEqual(['toolName', 'prompt', 'aiAgents', 'path']);
 		expect(property('toolName').required).toBe(true);
 		expect(property('prompt').required).toBe(true);
+	});
+
+	it('loads the AI Agents multi-select from the SystemAIAgent registry', () => {
+		expect(property('aiAgents').type).toBe('multiOptions');
+		expect(property('aiAgents').typeOptions?.loadOptionsMethod).toBe('getAiAgents');
+		expect(property('aiAgents').default).toEqual([]);
+		expect(node.methods.loadOptions.getAiAgents).toBe(getAiAgents);
 	});
 
 	it('offers String, Number, Integer and Boolean as parameter types, with a description field', () => {

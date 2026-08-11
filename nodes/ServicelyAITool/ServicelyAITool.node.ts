@@ -8,6 +8,7 @@ import {
 	NodeOperationError,
 } from 'n8n-workflow';
 
+import { getAiAgents } from '../Servicely/SearchFunctions';
 import {
 	type AuthenticationResult,
 	AUTH_CREDENTIAL_NAME,
@@ -68,6 +69,11 @@ export class ServicelyAITool implements INodeType {
 		usableAsTool: undefined,
 		credentials: [
 			{
+				// Reads the instance's agents for the AI Agents selector
+				name: 'servicelyApi',
+				required: true,
+			},
+			{
 				// Optional on purpose: without a credential the endpoint takes any caller
 				name: AUTH_CREDENTIAL_NAME,
 				required: false,
@@ -115,6 +121,17 @@ export class ServicelyAITool implements INodeType {
 				required: true,
 				description:
 					'Tells the agent what this tool does and when to call it. Exported with the tool.',
+			},
+			{
+				displayName: 'AI Agents',
+				name: 'aiAgents',
+				type: 'multiOptions',
+				typeOptions: {
+					loadOptionsMethod: 'getAiAgents',
+				},
+				default: [],
+				description:
+					'The Servicely AI agents this tool is exported to. The list shows SystemAIAgent records by Name; each agent is stored by its Key. Choose from the list, or specify keys using an expression.',
 			},
 			{
 				displayName: 'Path',
@@ -277,6 +294,9 @@ export class ServicelyAITool implements INodeType {
 			},
 		],
 	};
+
+	/** Only the agent loader: the pickers of the Servicely node have no counterpart here. */
+	methods = { loadOptions: { getAiAgents } };
 
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
 		const onValidationError = this.getNodeParameter('onValidationError') as
