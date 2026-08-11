@@ -56,11 +56,13 @@ export class ServicelyAITool implements INodeType {
 			{
 				// Reads the instance's agents for the AI Agents selector
 				name: 'servicelyApi',
+				'displayName': 'Servicely API',
 				required: true,
 			},
 			{
 				// Decides what a caller has to present; the endpoint is never public
 				name: AUTH_CREDENTIAL_NAME,
+				'displayName': 'Servicely AI Tool Auth',
 				required: true,
 			},
 		],
