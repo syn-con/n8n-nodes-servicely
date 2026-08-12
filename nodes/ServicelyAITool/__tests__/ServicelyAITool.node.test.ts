@@ -188,9 +188,17 @@ describe('node description', () => {
 		expect(webhookDescription.responseCode).toContain('$parameter');
 		expect(webhookDescription.responseData).toContain('$parameter');
 		expect(property('responseMode').default).toBe('responseNode');
-		expect(node.description.properties.some((entry) => entry.name === 'responseTimeout')).toBe(
-			false,
-		);
+	});
+
+	// The only deadline in play is the service desk's: n8n keeps the request open
+	// for as long as the workflow runs, so the timeout is registration data and
+	// asking for it under *Immediately* would be asking about a wait that is over.
+	it('asks how long the service desk waits, for the modes that make it wait', () => {
+		const timeout = property('responseTimeout');
+
+		expect(timeout.displayName).toBe('Tool Timeout (Seconds)');
+		expect(timeout.displayOptions?.show?.responseMode).toEqual(['lastNode', 'responseNode']);
+		expect(timeout.default).toBe(60);
 	});
 
 	// The node has no input and is read on activation, so there is neither a `$json`

@@ -51,7 +51,7 @@ export class ServicelyAIToolResponse implements INodeType {
 		properties: [
 			{
 				displayName:
-					'The Servicely AI Tool that starts this workflow must have "Respond" set to "Using Servicely AI Tool Response Node" — it refuses a call otherwise, rather than leaving this node with an answer nobody is waiting for. The caller waits until this node runs, so a branch that never reaches it never answers.',
+					'The Servicely AI Tool that starts this workflow must have "Respond" set to "Using Servicely AI Tool Response Node" — it refuses a call otherwise, rather than leaving this node with an answer nobody is waiting for. n8n keeps the request open until this node runs, so a branch that never reaches it never answers, and the service desk stops waiting after the tool\'s Tool Timeout.',
 				name: 'responseModeNotice',
 				type: 'notice',
 				default: '',

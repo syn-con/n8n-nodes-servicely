@@ -10,8 +10,8 @@ import type { ServicelyRecord } from '../Servicely/types';
 import { toolDescription, toolKey, toolName } from './identity';
 import {
 	DEFAULT_EXECUTION_SCRIPT,
-	DEFAULT_RESPONSE_TIMEOUT_SECONDS,
 	readParameterDefinitions,
+	readToolTimeoutSeconds,
 } from './parameters';
 import type { ParameterDefinition } from './validation';
 
@@ -549,11 +549,10 @@ export async function createTool(this: IHookFunctions): Promise<boolean> {
 		Description: toolDescription(this),
 		// Always sent, so clearing the field in n8n clears it on the record too
 		ExecutionScript: executionScript(this),
-		// How long the service desk waits for a call to be answered. n8n holds the
-		// request open for as long as the workflow runs — the Webhook node this one
-		// follows sets no deadline of its own — so there is nothing node-side to
-		// mirror here, only the patience the service desk needs to be given.
-		TimeoutSeconds: DEFAULT_RESPONSE_TIMEOUT_SECONDS,
+		// How long the service desk waits for a call to be answered — the node's Tool
+		// Timeout. n8n sets no deadline of its own, so this is the only one there is,
+		// and it is sent on every registration so a changed timeout takes effect.
+		TimeoutSeconds: readToolTimeoutSeconds(this),
 	};
 
 	const existing = await findTool(this, key);

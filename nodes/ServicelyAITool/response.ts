@@ -4,6 +4,8 @@ import {
 	WorkflowConfigurationError,
 } from 'n8n-workflow';
 
+import { DEFAULT_RESPONSE_TIMEOUT_SECONDS } from './parameters';
+
 /**
  * How the AI Tool answers a call, modelled on n8n's own Webhook node
  * (`packages/nodes-base/nodes/Webhook`): the node itself never writes the
@@ -217,6 +219,34 @@ export const responseDataProperty: INodeProperties = {
 	],
 	default: 'firstEntryJson',
 	description: 'What data should be returned',
+};
+
+/**
+ * How long the service desk waits for this tool, exported with it as
+ * `TimeoutSeconds` — the caller's patience, and the only deadline there is: n8n
+ * holds the request open for as long as the workflow runs.
+ *
+ * Shown for the two modes that make the agent wait for the workflow, and not for
+ * *Immediately*, which has answered before the workflow does anything. It is
+ * still registered under that mode, since the tool record always carries a
+ * timeout; it just has nothing to bound.
+ *
+ * The parameter keeps the name it had when it also armed a timer in n8n, so a
+ * workflow saved with a timeout still registers the timeout it was given.
+ */
+export const toolTimeoutProperty: INodeProperties = {
+	displayName: 'Tool Timeout (Seconds)',
+	name: 'responseTimeout',
+	type: 'number',
+	noDataExpression: true,
+	typeOptions: {
+		minValue: 1,
+		maxValue: 3600,
+	},
+	default: DEFAULT_RESPONSE_TIMEOUT_SECONDS,
+	description:
+		'How long the Servicely service desk waits for this tool to answer before it gives up on the call. Exported with the tool. n8n keeps the request open for as long as the workflow runs, so this bounds the agent\'s wait, not the workflow.',
+	displayOptions: { show: { responseMode: ['lastNode', 'responseNode'] } },
 };
 
 /**

@@ -333,9 +333,9 @@ describe('create', () => {
 		expect(ctx.calls).toHaveLength(0);
 	});
 
-	// n8n keeps the request open for as long as the workflow runs, so there is no
-	// node-side deadline to mirror — only the patience the service desk is given.
-	it('registers the tool with the standard TimeoutSeconds', async () => {
+	// The service desk's patience is the only deadline there is, so the node's Tool
+	// Timeout is what it has to be given.
+	it('mirrors the Tool Timeout into TimeoutSeconds', async () => {
 		const ctx = makeHookCtx({
 			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
 			params: { responseTimeout: 120 },
@@ -343,7 +343,22 @@ describe('create', () => {
 
 		await createTool.call(ctx);
 
-		expect(ctx.calls[1].body).toMatchObject({ TimeoutSeconds: 60 });
+		expect(ctx.calls[1].body).toMatchObject({ TimeoutSeconds: 120 });
+	});
+
+	// The record always carries a timeout, so an unusable value has to become one:
+	// an emptied box, or an expression that resolved to nothing.
+	it('falls back to the default timeout when the node has no usable one', async () => {
+		for (const responseTimeout of ['', 'soon', 0, -1]) {
+			const ctx = makeHookCtx({
+				responses: [ok([TOOL]), ok({ id: 'tool-9' })],
+				params: { responseTimeout },
+			});
+
+			await createTool.call(ctx);
+
+			expect(ctx.calls[1].body).toMatchObject({ TimeoutSeconds: 60 });
+		}
 	});
 
 	it('reactivates a record someone had switched off', async () => {

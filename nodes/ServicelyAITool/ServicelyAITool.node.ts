@@ -23,6 +23,7 @@ import {
 	responseModeProperty,
 	responseOptions,
 	responseWebhookFields,
+	toolTimeoutProperty,
 } from './response';
 import { isPlainObject, validateBody } from './validation';
 
@@ -192,6 +193,7 @@ export class ServicelyAITool implements INodeType {
 			responseModeProperty,
 			...responseModeNotices,
 			responseDataProperty,
+			toolTimeoutProperty,
 			{
 				displayName: 'On Validation Error',
 				name: 'onValidationError',
