@@ -23,7 +23,9 @@
       "dist/nodes/Servicely/Servicely.node.js",
       "dist/nodes/Servicely/ServicelyTrigger.node.js",
       "dist/nodes/ServicelyAITool/ServicelyAITool.node.js",
-      "dist/nodes/ServicelyAITool/ServicelyAIToolTrigger.node.js"
+      "dist/nodes/ServicelyAITool/ServicelyAIToolTrigger.node.js",
+      "dist/nodes/ServicelyAITool/ServicelyAIToolLegacyResponse.node.js",
+      "dist/nodes/ServicelyAITool/ServicelyAIToolLegacyTrigger.node.js"
     ]
   },
   "scripts": {

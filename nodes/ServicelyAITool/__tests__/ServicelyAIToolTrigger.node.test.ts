@@ -8,7 +8,7 @@ import { ServicelyAIToolTrigger } from '../ServicelyAIToolTrigger.node';
 const node = new ServicelyAIToolTrigger();
 
 /** The response node, as n8n types it once the package is installed. */
-const RESPONSE_NODE_TYPE = '@syn-con/n8n-nodes-servicely.servicelyAiToolResponse';
+const RESPONSE_NODE_TYPE = '@syn-con/n8n-nodes-servicely.servicelyAiAgentTool';
 
 interface WebhookStubOptions {
 	params?: IDataObject;
@@ -125,7 +125,7 @@ const parameterRow = (name: string, type?: string, description?: string) => ({
 
 describe('node description', () => {
 	it('is a POST webhook trigger needing both the instance and the endpoint credential', () => {
-		expect(node.description.name).toBe('servicelyAiTool');
+		expect(node.description.name).toBe('servicelyAiAgentToolTrigger');
 		expect(node.description.inputs).toEqual([]);
 		expect(node.description.webhooks?.[0].httpMethod).toBe('POST');
 		expect(node.description.credentials).toEqual([

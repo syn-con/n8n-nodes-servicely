@@ -1,26 +1,61 @@
 import type { CodexData } from 'n8n-workflow';
 
 /**
- * How the pair presents itself: the AI Agent Tool trigger and its Response node
- * are one feature in two nodes, so what the editor shows for them is written once
- * here rather than kept in step by hand.
+ * How the pair presents itself. The AI Agent Tool trigger and the node that
+ * answers a tool call are one feature, and n8n's node creator will show them as
+ * one card — the trigger under *Triggers*, the responder under *Actions* — but
+ * only if they are named the way it expects, so those names are written once
+ * here instead of being kept in step by hand.
  *
- * n8n has no way to make a trigger and a downstream node into a single node — it
- * registers a webhook for every instance of a node type that declares one, so a
- * merged node would open a live endpoint for each node placed in "respond" mode.
- * What can be shared is everything the node creator groups and searches on: the
- * same name stem, the same categories, the same aliases and the same
- * documentation. Searching for any of them turns up both, next to each other.
+ * What the editor actually does (`useActionsGeneration.ts`): it walks the
+ * non-trigger nodes and gives each an *app* card holding its actions, then walks
+ * the triggers and, for each, looks for an app whose type name equals
+ * `trigger.name.replace('Trigger', '')`. A match with at least one action merges
+ * the two. Hence:
+ *
+ * - the trigger's type is the responder's type plus `Trigger`,
+ * - the responder carries an `operation` property, since a card with no actions
+ *   is not merged into,
+ * - the trigger's *display* name contains "Trigger", which is what makes the
+ *   editor offer it as a trigger at all.
+ *
+ * Break any one of those and the two quietly become two cards again, which is
+ * what `__tests__/presentation.test.ts` is guarding.
  */
 
-/** The trigger's name in the editor, and the stem the pair is named after. */
+/** The responder's node type — the stem the pair is built on. */
+export const TOOL_NODE_TYPE = 'servicelyAiAgentTool';
+
+/** The trigger's node type. The suffix is what merges the two in the panel. */
+export const TRIGGER_NODE_TYPE = `${TOOL_NODE_TYPE}Trigger`;
+
+/**
+ * The types this pair was published under before it was one card, kept alive by
+ * the hidden nodes next to each of them so a saved workflow still loads and runs.
+ * New workflows never get these: the editor does not offer a hidden node.
+ */
+export const LEGACY_TRIGGER_NODE_TYPE = 'servicelyAiTool';
+export const LEGACY_TOOL_NODE_TYPE = 'servicelyAiToolResponse';
+
+/** The card's name, and the responder's, since the card takes the app's name. */
 export const TOOL_DISPLAY_NAME = 'Servicely AI Agent Tool';
 
-/** The Response node's name: the trigger's, plus what it does. */
+/**
+ * The trigger's name in the editor. It has to say "Trigger" — that is how the
+ * node creator tells a trigger apart when it builds the *Triggers* half of the
+ * card — while the node it drops on the canvas is still called
+ * {@link TOOL_DISPLAY_NAME}, which is also the name its tool registers under.
+ */
+export const TRIGGER_DISPLAY_NAME = `${TOOL_DISPLAY_NAME} Trigger`;
+
+/** What the responder is called on the canvas, where it sits next to the trigger. */
 export const RESPONSE_DISPLAY_NAME = `${TOOL_DISPLAY_NAME} Response`;
 
 /** The endpoint credential, named after the tool it guards. */
 export const AUTH_DISPLAY_NAME = `${TOOL_DISPLAY_NAME} Auth`;
+
+/** How the responder's one operation reads in the Actions list of the card. */
+export const SEND_RESPONSE_ACTION = 'Send a response';
 
 /** The one page documenting both nodes. */
 export const DOCUMENTATION_URL =
@@ -28,9 +63,8 @@ export const DOCUMENTATION_URL =
 
 /**
  * What the node creator files and finds both nodes by. Identical on the two, so
- * they sit together under every category and answer the same searches — including
- * the ones for the half the person is not looking at, since the two are only ever
- * used together.
+ * the card answers every search either half would — including the ones for the
+ * half the person is not looking at, since the two are only ever used together.
  *
  * No `subcategories`: the AI sections of the panel carry meanings these nodes do
  * not have (an "AI › Tools" node is one an n8n agent calls, which this is the

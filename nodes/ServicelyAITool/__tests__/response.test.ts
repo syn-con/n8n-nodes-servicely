@@ -12,10 +12,17 @@ import {
 	type ResponseParameters,
 } from '../response';
 
-/** The node types n8n gives a community node, plus the bare one a test fixture uses. */
+/**
+ * The node types a response node can arrive as: the package prefix n8n gives a
+ * community node, an installation under another package name, the bare name a
+ * test fixture uses — and the type the node was published under before the pair
+ * became one card, which a saved workflow still holds.
+ */
 const RESPONSE_NODE_TYPES = [
+	'@syn-con/n8n-nodes-servicely.servicelyAiAgentTool',
+	'CUSTOM.servicelyAiAgentTool',
+	'servicelyAiAgentTool',
 	'@syn-con/n8n-nodes-servicely.servicelyAiToolResponse',
-	'CUSTOM.servicelyAiToolResponse',
 	'servicelyAiToolResponse',
 ];
 
@@ -190,5 +197,23 @@ describe('checkResponseModeConfiguration', () => {
 		expect(() =>
 			checkResponseModeConfiguration(makeContext('responseNode', ['other.notAResponseNode'])),
 		).toThrow('No Servicely AI Agent Tool Response node found');
+	});
+
+	// The trigger's type is the response node's plus "Trigger" — that is what makes
+	// the editor show them as one card — so a trigger downstream of a trigger must
+	// not read as the thing that answers.
+	it('does not mistake another trigger for a response node', () => {
+		for (const type of [
+			'@syn-con/n8n-nodes-servicely.servicelyAiAgentToolTrigger',
+			'servicelyAiAgentToolTrigger',
+			'@syn-con/n8n-nodes-servicely.servicelyAiTool',
+		]) {
+			expect(() => checkResponseModeConfiguration(makeContext('responseNode', [type]))).toThrow(
+				'No Servicely AI Agent Tool Response node found',
+			);
+			expect(() =>
+				checkResponseModeConfiguration(makeContext('onReceived', [type])),
+			).not.toThrow();
+		}
 	});
 });

@@ -20,6 +20,8 @@ import {
 	DOCUMENTATION_URL,
 	TOOL_CODEX,
 	TOOL_DISPLAY_NAME,
+	TRIGGER_DISPLAY_NAME,
+	TRIGGER_NODE_TYPE,
 } from './presentation';
 import { toolRegistrationMethods } from './registration';
 import {
@@ -43,11 +45,10 @@ const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
  */
 export class ServicelyAIToolTrigger implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: TOOL_DISPLAY_NAME,
-		// The type every saved workflow refers to. It predates the display name and
-		// stays as it is: renaming it would leave those workflows pointing at a node
-		// type this package no longer has.
-		name: 'servicelyAiTool',
+		// Says "Trigger" because that is how the node creator recognises one; the node
+		// it drops is still called `defaults.name` below, which is what registers.
+		displayName: TRIGGER_DISPLAY_NAME,
+		name: TRIGGER_NODE_TYPE,
 		icon: { light: 'file:../../icons/servicely.svg', dark: 'file:../../icons/servicely.dark.svg' },
 		group: ['trigger'],
 		version: 1,

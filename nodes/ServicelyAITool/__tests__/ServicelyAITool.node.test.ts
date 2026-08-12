@@ -33,8 +33,8 @@ async function execute(params: IDataObject = {}, items: IDataObject[] = [{ id: 1
 
 describe('node description', () => {
 	it('is registered under the Servicely AI Agent Tool name', () => {
-		expect(node.description.name).toBe('servicelyAiToolResponse');
-		expect(node.description.displayName).toBe('Servicely AI Agent Tool Response');
+		expect(node.description.name).toBe('servicelyAiAgentTool');
+		expect(node.description.displayName).toBe('Servicely AI Agent Tool');
 	});
 });
 

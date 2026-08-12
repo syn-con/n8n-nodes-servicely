@@ -165,7 +165,16 @@ The **Servicely Trigger** is a polling node — n8n adds a **Poll Times** schedu
 - **Max Retries** — retries on rate limits (429), server errors (5xx), and network failures, with exponential backoff + jitter (default 3; `0` disables). `Retry-After` is honored. Client errors (400/401/404/422) are never retried.
 
 ## AI Agent Tool
-The **Servicely AI Agent Tool** node turns a workflow into a tool the Servicely service desk agent can call. It declares the tool, serves it on an HTTP `POST` endpoint, and validates the call before the workflow runs. The **Servicely AI Agent Tool Response** node sends the answer back.
+The **Servicely AI Agent Tool** node turns a workflow into a tool the Servicely service desk agent can call. It declares the tool, serves it on an HTTP `POST` endpoint, and validates the call before the workflow runs. A second node sends the answer back.
+
+Both are **one entry in the nodes panel**. Search for *Servicely AI Agent Tool* and the card offers:
+
+| | what it adds |
+| --- | --- |
+| **Triggers** → *On new Servicely AI Agent Tool event* | the trigger: declares and serves the tool |
+| **Actions** → *Send a response* | the node that answers the call |
+
+n8n builds that card by taking a node's type name, and merging into it any trigger whose type is the same plus `Trigger` — so the two are `servicelyAiAgentTool` and `servicelyAiAgentToolTrigger`, the action node carries an **Operation** of *Send Response* (a card with no actions is not merged into), and the trigger's panel label says "Trigger" while the node it drops on the canvas is still called *Servicely AI Agent Tool*. There is no way to make one node do both jobs: n8n opens a webhook for every instance of a node type that declares one, so a single node would open a dead endpoint for every response node in the workflow.
 
 ### Servicely AI Agent Tool (trigger)
 
@@ -212,8 +221,11 @@ Activating the workflow registers it as a tool; deactivating removes it. n8n dri
 - Renaming the node renames the tool (`Name` is always sent), and its links survive that too, since they hang off the record rather than its name.
 - A node with no id — a workflow assembled outside the editor — fails with "The node has no id yet".
 
-### Servicely AI Agent Tool Response
+### Servicely AI Agent Tool → Send a response
 
+Added from the **Actions** half of the card; it is called *Servicely AI Agent Tool Response* once it is on the canvas.
+
+- **Operation** — *Send Response*, the one operation. It is what the panel lists as the card's action.
 - **Respond With** — *Success* (status + data) or *Error* (status + message + optional JSON details, e.g. `{{ $json.validation.errors }}`).
 - **Data** — all incoming items, the first incoming item, a JSON body you write, or no data.
 - **Options → Envelope** (default on) wraps the body in `{ "success": true, "data": … }` / `{ "success": false, "error": … }`; **Message** adds a note to a success; **Response Headers** adds headers.
@@ -254,6 +266,7 @@ Activating the workflow registers it as a tool; deactivating removes it. n8n dri
 
 ## Compatibility
 
+- **AI Agent Tool node types changed in 0.7.0** so the pair could become one entry in the nodes panel: the trigger is now `servicelyAiAgentToolTrigger` and the node that answers is `servicelyAiAgentTool`. The two types published before that — `servicelyAiTool` (trigger) and `servicelyAiToolResponse` — are **still registered, hidden**, so every saved workflow keeps loading and running exactly as it did; they are simply no longer offered when you add a node. A workflow on the old nodes needs no action, and moving it onto the new pair is a matter of replacing the two nodes and re-activating (the tool re-registers under the new node's id, leaving the old record behind for cleanup). The trigger's **Respond** check accepts an old response node next to a current trigger, so the halves can be replaced one at a time.
 - Requires an n8n version supporting community nodes (`n8nNodesApiVersion: 1`).
 - Servicely REST API **v1**. Record creation returns **HTTP 200** (not 201).
 - Minimum Servicely versions for optional features:
@@ -322,6 +335,8 @@ nodes/Servicely/
 nodes/ServicelyAITool/
   ServicelyAIToolTrigger.node.ts   # webhook trigger: declares + serves the tool
   ServicelyAITool.node.ts          # answers the open request
+  ServicelyAIToolLegacyTrigger.node.ts   # the pre-0.7.0 types, hidden, delegating
+  ServicelyAIToolLegacyResponse.node.ts  # to the two above
   presentation.ts                  # the names, codex and docs both nodes share
   response.ts                      # the Respond modes, as n8n's Webhook node does them
   registration.ts                  # webhookMethods: registers the tool + its parameters
@@ -335,7 +350,8 @@ nodes/ServicelyAITool/
 - Each `*.operation.ts` exports `description` (its properties, scoped with `updateDisplayOptions`) and `execute(this, index)` handling **one** item.
 - `router.ts` owns the item loop, `continueOnFail`, and error wrapping, so operations carry no boilerplate.
 - `node.type.ts` makes the resource/operation pairing a compile-time union — an unregistered operation fails to build rather than at runtime.
-- The file names follow n8n's `<X>` / `<X>Trigger` pairing, as `Servicely` / `ServicelyTrigger` do: `ServicelyAITool.node.ts` is the node that acts (it answers the call) and `ServicelyAIToolTrigger.node.ts` is the one that starts the workflow. The class name has to match the file's base name — n8n's loader derives the one from the other — so the two are renamed together or not at all. The node *types* the files declare (`servicelyAiTool`, `servicelyAiToolResponse`) are what saved workflows refer to, and they are deliberately left as they were first published.
+- The file names follow n8n's `<X>` / `<X>Trigger` pairing, as `Servicely` / `ServicelyTrigger` do: `ServicelyAITool.node.ts` is the node that acts (it answers the call) and `ServicelyAIToolTrigger.node.ts` is the one that starts the workflow. The class name has to match the file's base name — n8n's loader derives the one from the other — so the two are renamed together or not at all. The node *types* pair the same way, which is what makes the editor show them as one card; `presentation.ts` owns those names, and `__tests__/presentation.test.ts` asserts each condition the editor's merge depends on, so a later rename cannot quietly split the card in two.
+- The two `…Legacy….node.ts` files are the types published before that merge, kept registered and `hidden` so saved workflows keep working. Each is a name and nothing else: its description spreads the current node's and its `webhook` / `execute` is the same function, so there is no second implementation to drift.
 - `nodes/ServicelyAITool/` sits outside the `actions/` convention: neither node has a resource/operation pair. The trigger keeps only its description and the webhook handler, and everything else lives in the helper modules next to it, which is what makes them directly unit-testable. Two of them exist because the pair has to agree with itself: `presentation.ts` holds what the editor shows for both nodes, and `response.ts` holds the Respond modes the trigger declares and the Response node fulfils.
 - `credentials/ServicelyApi.credentials.ts` — its `authenticate` resolves the instance URL into `baseURL` and signs every request (Basic / Bearer / HMAC), so no node code reads credentials.
 - `SearchFunctions.ts` — every **From List** picker is paginated. Servicely's list endpoints are offset-based, so each picker page returns n8n's `paginationToken` (the next page number) whenever the API filled the page; n8n asks for the next one as the user scrolls. Because the API has no text-search parameter, the typed filter is applied per page — a page emptied by filtering still hands back its token, so matches further in the table are not stranded. The **Table** and **Field Name** pickers are the exception: neither is `searchable`, so n8n loads each registry in one go and filters client-side, and the paging happens internally (bounded, since it runs at design time).

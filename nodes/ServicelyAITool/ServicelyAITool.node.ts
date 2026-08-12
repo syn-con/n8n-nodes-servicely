@@ -10,7 +10,14 @@ import {
 	NodeOperationError,
 } from 'n8n-workflow';
 
-import { DOCUMENTATION_URL, RESPONSE_DISPLAY_NAME, TOOL_CODEX } from './presentation';
+import {
+	DOCUMENTATION_URL,
+	RESPONSE_DISPLAY_NAME,
+	SEND_RESPONSE_ACTION,
+	TOOL_CODEX,
+	TOOL_DISPLAY_NAME,
+	TOOL_NODE_TYPE,
+} from './presentation';
 
 type RespondWith = 'success' | 'error';
 type SuccessData = 'allIncomingItems' | 'firstIncomingItem' | 'json' | 'noData';
@@ -35,9 +42,10 @@ const BODYLESS_STATUS_CODES = [204, 304];
  */
 export class ServicelyAITool implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: RESPONSE_DISPLAY_NAME,
-		// Left as it is for the same reason the trigger's type is — see that node
-		name: 'servicelyAiToolResponse',
+		// The card's name in the node creator, since the card is named after the node
+		// that acts; on the canvas it is called `defaults.name` below.
+		displayName: TOOL_DISPLAY_NAME,
+		name: TOOL_NODE_TYPE,
 		icon: { light: 'file:../../icons/servicely.svg', dark: 'file:../../icons/servicely.dark.svg' },
 		group: ['output'],
 		version: 1,
@@ -54,6 +62,24 @@ export class ServicelyAITool implements INodeType {
 		// This node only makes sense inside a workflow started by a tool call, not as a tool
 		usableAsTool: undefined,
 		properties: [
+			// What the node creator lists under Actions, and what makes the trigger merge
+			// into this node's card at all — an app with no actions is left alone. One
+			// operation today; the selector is where a second one would go.
+			{
+				displayName: 'Operation',
+				name: 'operation',
+				type: 'options',
+				noDataExpression: true,
+				options: [
+					{
+						name: 'Send Response',
+						value: 'sendResponse',
+						action: SEND_RESPONSE_ACTION,
+						description: 'Answer the agent that called the tool',
+					},
+				],
+				default: 'sendResponse',
+			},
 			{
 				displayName:
 					'The Servicely AI Agent Tool that starts this workflow must have "Respond" set to "Using Servicely AI Agent Tool Response Node" — it refuses a call otherwise, rather than leaving this node with an answer nobody is waiting for. n8n keeps the request open until this node runs, so a branch that never reaches it never answers, and the service desk stops waiting after the tool\'s Tool Timeout.',
