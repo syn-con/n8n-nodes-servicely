@@ -17,6 +17,7 @@ export const versionDescription: INodeTypeDescription = {
   name: 'servicely',
   icon: { light: 'file:../../icons/servicely.svg', dark: 'file:../../icons/servicely.dark.svg' },
   group: ['transform'],
+  usableAsTool: true,
   version: 1,
   subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
   description: 'Read and write records and attachments in Servicely via the JSON REST API',
