@@ -10,5 +10,5 @@ export { ServicelyAIToolAuthApi } from './credentials/ServicelyAIToolAuthApi.cre
 export { Servicely } from './nodes/Servicely/Servicely.node';
 export { ServicelyTrigger } from './nodes/Servicely/ServicelyTrigger.node';
 export { ServicelyAITool } from './nodes/ServicelyAITool/ServicelyAITool.node';
-export { ServicelyAIToolResponse } from './nodes/ServicelyAITool/ServicelyAIToolResponse.node';
+export { ServicelyAIToolTrigger } from './nodes/ServicelyAITool/ServicelyAIToolTrigger.node';
 export * from './nodes/Servicely/types';

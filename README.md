@@ -1,8 +1,8 @@
 # n8n-nodes-servicely
 
-An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform. It talks to the Servicely JSON REST API (v1) so your workflows can read and write records on any table (Incident, Request, User, Group, …), manage file attachments, run a full-text Global Search, and call instance controllers directly. A companion **Servicely Trigger** node starts workflows on a schedule by dequeuing async-queue messages or polling a table by filter, and the **Servicely AI Tool** pair exposes a workflow as a tool the service desk agent can call.
+An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform. It talks to the Servicely JSON REST API (v1) so your workflows can read and write records on any table (Incident, Request, User, Group, …), manage file attachments, run a full-text Global Search, and call instance controllers directly. A companion **Servicely Trigger** node starts workflows on a schedule by dequeuing async-queue messages or polling a table by filter, and the **Servicely AI Agent Tool** pair exposes a workflow as a tool the service desk agent can call.
 
-[Installation](#installation) · [Credentials](#credentials) · [Operations](#operations) · [Trigger](#trigger) · [AI Tool](#ai-tool) · [Examples](#examples) · [Compatibility](#compatibility) · [Development](#development)
+[Installation](#installation) · [Credentials](#credentials) · [Operations](#operations) · [Trigger](#trigger) · [AI Agent Tool](#ai-agent-tool) · [Examples](#examples) · [Compatibility](#compatibility) · [Development](#development)
 
 ---
 
@@ -45,7 +45,7 @@ Create a **Servicely API** credential:
 
 Secrets are stored encrypted by n8n and are never written into workflow data.
 
-The **Servicely AI Tool Auth API** credential is separate and points the other way: it describes what an incoming tool call has to present (**Basic Auth**, **Header Auth**, or a **JWT** bearer token verified with a shared secret or a PEM public key). See [AI Tool](#ai-tool).
+The **Servicely AI Agent Tool Auth API** credential is separate and points the other way: it describes what an incoming tool call has to present (**Basic Auth**, **Header Auth**, or a **JWT** bearer token verified with a shared secret or a PEM public key). See [AI Agent Tool](#ai-agent-tool).
 
 ## Operations
 
@@ -164,27 +164,26 @@ The **Servicely Trigger** is a polling node — n8n adds a **Poll Times** schedu
 - **Timeout (ms)** — per-request timeout (default 30000).
 - **Max Retries** — retries on rate limits (429), server errors (5xx), and network failures, with exponential backoff + jitter (default 3; `0` disables). `Retry-After` is honored. Client errors (400/401/404/422) are never retried.
 
-## AI Tool
+## AI Agent Tool
+The **Servicely AI Agent Tool** node turns a workflow into a tool the Servicely service desk agent can call. It declares the tool, serves it on an HTTP `POST` endpoint, and validates the call before the workflow runs. The **Servicely AI Agent Tool Response** node sends the answer back.
 
-The **Servicely AI Tool** node turns a workflow into a tool the Servicely service desk agent can call. It declares the tool, serves it on an HTTP `POST` endpoint, and validates the call before the workflow runs. The **Servicely AI Tool Response** node sends the answer back.
+### Servicely AI Agent Tool (trigger)
 
-### Servicely AI Tool (trigger)
-
-The tool is exported under the **node's** name (as `[n8n] <node name>`), so the node asks for no name of its own — rename the node on the canvas and the next activation renames the tool. One node is one tool, so a workflow can declare several by holding several AI Tool nodes; name them after what they do, since two nodes both left at the default "Servicely AI Tool" register two tools the agent cannot tell apart.
+The tool is exported under the **node's** name (as `[n8n] <node name>`), so the node asks for no name of its own — rename the node on the canvas and the next activation renames the tool. One node is one tool, so a workflow can declare several by holding several AI Agent Tool nodes; name them after what they do, since two nodes both left at the default "Servicely AI Agent Tool" register two tools the agent cannot tell apart.
 
 - **Prompt** — what the tool does and when to call it. Exported with the tool, so the agent reads it when deciding.
 - **Path** — the path the tool listens on, appended to the webhook base URL (the full path is served as given, without an internal webhook id).
 - **Parameters** — the tool's arguments. Each row is a **Param Name**, a **Param Type** (`String`, `Number`, `Integer`, `Boolean`; defaults to String) and a **Param Description** that is exported with the tool. Every declared parameter is required, and a call missing one is rejected.
 - **`IsProduction`** — a boolean parameter every tool carries on top of the declared ones, exported last so it never reorders them. Its description tells the agent to send `true` unless the user explicitly asked for a test run, so a workflow can tell a real call from a rehearsal without each tool defining its own flag. It is the one parameter that is *not* validated: a call that omits it, or sends something other than a boolean, still runs — the value is passed on as it came, and its absence is left for the workflow to interpret rather than assumed to mean anything. It is also not treated as unknown when **Allow Unknown Parameters** is off. Declaring a row named `IsProduction` replaces it — type, description and position then come from that row, and it is validated like any other parameter.
-- **Respond** — when and how the agent is answered, following n8n's own **Webhook** node: *Using Servicely AI Tool Response Node* (default), *Immediately*, or *When Last Node Finishes*. The node never writes the response itself; it declares the mode, the status code and the data on its webhook, and n8n sends it.
-  - *Using Servicely AI Tool Response Node* — the request stays open until a **Servicely AI Tool Response** node runs, however long the workflow takes. A branch that never reaches one never answers.
+- **Respond** — when and how the agent is answered, following n8n's own **Webhook** node: *Using Servicely AI Agent Tool Response Node* (default), *Immediately*, or *When Last Node Finishes*. The node never writes the response itself; it declares the mode, the status code and the data on its webhook, and n8n sends it.
+  - *Using Servicely AI Agent Tool Response Node* — the request stays open until a **Servicely AI Agent Tool Response** node runs, however long the workflow takes. A branch that never reaches one never answers.
   - *Immediately* — answers as soon as this node validated the call, with `{ "success": true, "message": "Workflow was started" }` unless **Options → Response Data** or **No Response Body** says otherwise.
   - *When Last Node Finishes* — answers with the last executed node's data, shaped by **Response Data**: *First Entry JSON* (default), *All Entries*, or *No Response Body*.
 - **Tool Timeout (Seconds)** — how long the *service desk* waits for this tool to answer before giving up on the call, exported with the tool as `TimeoutSeconds`. Default 60, and shown under the two modes that make the agent wait; *Immediately* has already answered, so it does not ask. It is the only deadline in play: n8n keeps the request open for as long as the workflow runs, so this bounds the agent's wait, not the workflow's — a workflow that overruns it keeps going, it just answers into a call nobody is waiting for any more.
-- **The Respond setting and the wiring have to agree**, and a call that would go unanswered is refused with a `500` rather than left hanging: *Using Servicely AI Tool Response Node* with no response node downstream fails with "No Servicely AI Tool Response node found in the workflow", and a response node under either other mode fails with "Unused …" — n8n has already replied by the time that node runs, so its answer would go nowhere. The check runs before the caller is even authenticated.
+- **The Respond setting and the wiring have to agree**, and a call that would go unanswered is refused with a `500` rather than left hanging: *Using Servicely AI Agent Tool Response Node* with no response node downstream fails with "No Servicely AI Agent Tool Response node found in the workflow", and a response node under either other mode fails with "Unused …" — n8n has already replied by the time that node runs, so its answer would go nowhere. The check runs before the caller is even authenticated.
 - **On Validation Error** — respond `400` with the errors (default), or run the workflow anyway and pass them on in `json.validation`.
 - **Options → Allow Unknown Parameters** (default on), **Coerce Types** (default off, converts e.g. the string `"12"` to `12` before validating), **AI Agents**, **AI Assistants**, and **Execution Script**.
-- **Options → the response ones** — **Response Code** (default 200), **Response Headers**, **Response Data** (a fixed body for *Immediately*), **No Response Body**, and, for *When Last Node Finishes* returning First Entry JSON, **Response Content-Type** and **Response Property Name** (answer with one property of the item instead of the whole JSON). Each shows only under the modes it applies to, and none appears under *Using Servicely AI Tool Response Node* — that node carries its own status, body and headers.
+- **Options → the response ones** — **Response Code** (default 200), **Response Headers**, **Response Data** (a fixed body for *Immediately*), **No Response Body**, and, for *When Last Node Finishes* returning First Entry JSON, **Response Content-Type** and **Response Property Name** (answer with one property of the item instead of the whole JSON). Each shows only under the modes it applies to, and none appears under *Using Servicely AI Agent Tool Response Node* — that node carries its own status, body and headers.
 - **Options → AI Agents** / **AI Assistants** — who the tool is exported to: multi-selects loaded from the instance's `SystemAIAgent` and `SystemAIAssistant` tables, each entry labelled by its **Name** and stored by its record id. Reading them needs the **Servicely API** credential; a table that cannot be answered for leaves that list empty, which is also how an instance without one reads. Activating the workflow links the tool to exactly what each selects (see below). The two are independent — selecting agents does not touch the assistants — and an option you never add is left alone entirely: that table is not even read, since a workflow that says nothing about assistants is not asking for its tool to be taken out of them. Adding an option and then emptying it *is* a statement, and unlinks the tool from everything in that table.
 - **Options → Execution Script** — the script the service desk runs for this tool, exported with it. **Every tool gets one whether or not you add this option**: the default script posts the call's parameters to this workflow and answers with what it returns, since a tool registered without a script would do nothing. Add the option only to replace it — leaving the box blank falls back to the default, so writing a no-op means writing one.
 
@@ -197,7 +196,7 @@ None of the fields take an expression. The node has no input, and its values are
 
 The emitted item carries `body`, `parameters` (the declared arguments, after coercion), `headers`, `query`, `params`, `validation`, and — with a JWT credential — the verified `jwt` payload.
 
-The node takes two credentials, both required: the **Servicely API** one (it backs the AI Agents list and the registration below) and a **Servicely AI Tool Auth API** one deciding what a caller has to present. The JWT algorithm is taken from the credential, not from the token, so a caller cannot downgrade the signature.
+The node takes two credentials, both required: the **Servicely API** one (it backs the AI Agents list and the registration below) and a **Servicely AI Agent Tool Auth API** one deciding what a caller has to present. The JWT algorithm is taken from the credential, not from the token, so a caller cannot downgrade the signature.
 
 ### Registration in the service desk
 
@@ -209,17 +208,17 @@ Activating the workflow registers it as a tool; deactivating removes it. n8n dri
 - **On deactivate** the tool comes out of every agent's and assistant's `Tools` first, so none is left pointing at a record that is about to go — a failure there is logged and the delete goes ahead anyway. The record is then looked up by that same Key and deleted if it is there. Nothing is cached between the hooks — the Key is the tool's whole identity, so a restart or a record edited in the service desk changes nothing about what the hooks find.
 - **"Listen for test event" registers the tool** like an activation does, so it can be exercised from the service desk while you are still building the workflow. Stopping the listen deliberately does *not* remove the registration: n8n tears a test webhook down exactly the way it deregisters a production one, and removing it there would deregister a workflow that is active at the same time.
 - Nothing left to remove is not treated as a failure, and removal never throws: n8n clears a workflow's webhooks on the way *into* activation as well, so a throw there would block activating the workflow too. Real failures (an expired token, a 500) are logged at error level instead.
-- The Key is the **node id**, so each Servicely AI Tool node owns exactly one tool record and a second node in the same workflow registers a second tool of its own. The id is n8n's, and it survives everything a workflow can do to a node except deleting it — renaming it, moving it, editing its parameters — so a tool keeps its registration, and its links to agents and assistants, across all of those. Delete the node and the next activation deregisters its tool.
+- The Key is the **node id**, so each Servicely AI Agent Tool node owns exactly one tool record and a second node in the same workflow registers a second tool of its own. The id is n8n's, and it survives everything a workflow can do to a node except deleting it — renaming it, moving it, editing its parameters — so a tool keeps its registration, and its links to agents and assistants, across all of those. Delete the node and the next activation deregisters its tool.
 - Renaming the node renames the tool (`Name` is always sent), and its links survive that too, since they hang off the record rather than its name.
 - A node with no id — a workflow assembled outside the editor — fails with "The node has no id yet".
 
-### Servicely AI Tool Response
+### Servicely AI Agent Tool Response
 
 - **Respond With** — *Success* (status + data) or *Error* (status + message + optional JSON details, e.g. `{{ $json.validation.errors }}`).
 - **Data** — all incoming items, the first incoming item, a JSON body you write, or no data.
 - **Options → Envelope** (default on) wraps the body in `{ "success": true, "data": … }` / `{ "success": false, "error": … }`; **Message** adds a note to a success; **Response Headers** adds headers.
 - `204` and `304` are sent without a body. Items pass through unchanged, so the workflow can carry on after responding.
-- The trigger must have **Respond** set to *Using Servicely AI Tool Response Node*; under either other mode it refuses the call outright, rather than leaving this node with an answer nobody is waiting for. n8n holds the request open until this node runs, however long that takes — the trigger's **Tool Timeout** is what decides how long the service desk waits for it.
+- The trigger must have **Respond** set to *Using Servicely AI Agent Tool Response Node*; under either other mode it refuses the call outright, rather than leaving this node with an answer nobody is waiting for. n8n holds the request open until this node runs, however long that takes — the trigger's **Tool Timeout** is what decides how long the service desk waits for it.
 
 ## Examples
 
@@ -248,10 +247,10 @@ Activating the workflow registers it as a tool; deactivating removes it. n8n dri
 
 **Expose a workflow as an agent tool**
 
-1. **Servicely AI Tool**, Name `create_incident`, Prompt "Creates an incident for a user and returns its number", AI Agents = the service desk agent, Path `create-incident`.
+1. **Servicely AI Agent Tool**, Name `create_incident`, Prompt "Creates an incident for a user and returns its number", AI Agents = the service desk agent, Path `create-incident`.
 2. *Parameters:* `shortDescription` (String, "What is wrong"), `priority` (Integer, "1 highest to 4 lowest").
 3. **Servicely → Object → Create**, Table `Incident`, fields taken from `={{ $json.parameters.shortDescription }}` and `={{ $json.parameters.priority }}`.
-4. **Servicely AI Tool Response**, Respond With *Success*, Data *First Incoming Item*.
+4. **Servicely AI Agent Tool Response**, Respond With *Success*, Data *First Incoming Item*.
 
 ## Compatibility
 
@@ -321,9 +320,12 @@ nodes/Servicely/
   types.ts
 
 nodes/ServicelyAITool/
-  ServicelyAITool.node.ts          # webhook trigger: declares + serves the tool
-  ServicelyAIToolResponse.node.ts  # answers the open request
+  ServicelyAIToolTrigger.node.ts   # webhook trigger: declares + serves the tool
+  ServicelyAITool.node.ts          # answers the open request
+  presentation.ts                  # the names, codex and docs both nodes share
+  response.ts                      # the Respond modes, as n8n's Webhook node does them
   registration.ts                  # webhookMethods: registers the tool + its parameters
+  identity.ts                      # the registered tool's Key, Name and Description
   parameters.ts                    # reads the declared parameters, for both sides
   validation.ts                    # the four parameter types, coercion, body check
   authentication.ts                # Basic / Header / JWT, per the attached credential
@@ -333,7 +335,8 @@ nodes/ServicelyAITool/
 - Each `*.operation.ts` exports `description` (its properties, scoped with `updateDisplayOptions`) and `execute(this, index)` handling **one** item.
 - `router.ts` owns the item loop, `continueOnFail`, and error wrapping, so operations carry no boilerplate.
 - `node.type.ts` makes the resource/operation pairing a compile-time union — an unregistered operation fails to build rather than at runtime.
-- `nodes/ServicelyAITool/` sits outside the `actions/` convention: neither node has a resource/operation pair. The trigger keeps only the description and the webhook handler, the rest lives in the three helper modules next to it, which is what makes them directly unit-testable.
+- The file names follow n8n's `<X>` / `<X>Trigger` pairing, as `Servicely` / `ServicelyTrigger` do: `ServicelyAITool.node.ts` is the node that acts (it answers the call) and `ServicelyAIToolTrigger.node.ts` is the one that starts the workflow. The class name has to match the file's base name — n8n's loader derives the one from the other — so the two are renamed together or not at all. The node *types* the files declare (`servicelyAiTool`, `servicelyAiToolResponse`) are what saved workflows refer to, and they are deliberately left as they were first published.
+- `nodes/ServicelyAITool/` sits outside the `actions/` convention: neither node has a resource/operation pair. The trigger keeps only its description and the webhook handler, and everything else lives in the helper modules next to it, which is what makes them directly unit-testable. Two of them exist because the pair has to agree with itself: `presentation.ts` holds what the editor shows for both nodes, and `response.ts` holds the Respond modes the trigger declares and the Response node fulfils.
 - `credentials/ServicelyApi.credentials.ts` — its `authenticate` resolves the instance URL into `baseURL` and signs every request (Basic / Bearer / HMAC), so no node code reads credentials.
 - `SearchFunctions.ts` — every **From List** picker is paginated. Servicely's list endpoints are offset-based, so each picker page returns n8n's `paginationToken` (the next page number) whenever the API filled the page; n8n asks for the next one as the user scrolls. Because the API has no text-search parameter, the typed filter is applied per page — a page emptied by filtering still hands back its token, so matches further in the table are not stranded. The **Table** and **Field Name** pickers are the exception: neither is `searchable`, so n8n loads each registry in one go and filters client-side, and the paging happens internally (bounded, since it runs at design time).
 

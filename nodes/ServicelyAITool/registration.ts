@@ -282,7 +282,7 @@ async function writeParameter(
 		if (method === 'POST') {
 			throw missingTableError(ctx, PARAMETER_TABLE);
 		}
-		ctx.logger.warn(`The Servicely AI Tool parameter at ${path} is no longer there`);
+		ctx.logger.warn(`The Servicely AI Agent Tool parameter at ${path} is no longer there`);
 	}
 }
 
@@ -538,7 +538,7 @@ function syncAllHolderLinks(
  * has no business rewriting it.
  */
 export async function createTool(this: IHookFunctions): Promise<boolean> {
-	this.logger.debug('Registering the Servicely AI Tool for this node');
+	this.logger.debug('Registering the Servicely AI Agent Tool for this node');
 	const key = toolKey(this);
 
 	const fields: IDataObject = {
@@ -577,7 +577,7 @@ export async function createTool(this: IHookFunctions): Promise<boolean> {
 	}
 
 	if (toolId === undefined) {
-		throw new NodeOperationError(this.getNode(), 'The registered Servicely AI Tool has no id', {
+		throw new NodeOperationError(this.getNode(), 'The registered Servicely AI Agent Tool has no id', {
 			description: `The ${TOOL_TABLE} record could not be resolved after writing it, so the tool's parameters could not be created.`,
 		});
 	}
@@ -612,17 +612,17 @@ export async function createTool(this: IHookFunctions): Promise<boolean> {
 export async function deleteTool(this: IHookFunctions): Promise<boolean> {
 	// Stopping a test listen must not deregister a workflow that is active.
 	if (isTestRegistration(this)) {
-		this.logger.debug('Test run: leaving the Servicely AI Tool registration alone');
+		this.logger.debug('Test run: leaving the Servicely AI Agent Tool registration alone');
 		return true;
 	}
 
 	try {
-		this.logger.debug('Removing the Servicely AI Tool for this node');
+		this.logger.debug('Removing the Servicely AI Agent Tool for this node');
 		// Resolved by Key on every call, so the record is found however long the
 		// workflow was active and whatever happened to it in the meantime.
 		const existing = await findTool(this, toolKey(this));
 		if (existing === undefined) {
-			this.logger.warn('No Servicely AI Tool is registered for this node');
+			this.logger.warn('No Servicely AI Agent Tool is registered for this node');
 			return true;
 		}
 
@@ -634,7 +634,7 @@ export async function deleteTool(this: IHookFunctions): Promise<boolean> {
 			await Promise.all(syncAllHolderLinks(this, String(existing.id), () => []));
 		} catch (error) {
 			const { message } = error as Error;
-			this.logger.warn(`Could not unlink the Servicely AI Tool from its holders: ${message}`);
+			this.logger.warn(`Could not unlink the Servicely AI Agent Tool from its holders: ${message}`);
 		}
 
 		await servicelyApiRequest.call(this, 'DELETE', `/v1/${TOOL_TABLE}/${String(existing.id)}`);
@@ -643,9 +643,9 @@ export async function deleteTool(this: IHookFunctions): Promise<boolean> {
 		// otherwise a wrong token or a 500 removes nothing and says nothing.
 		const { message } = error as Error;
 		if (isNotFound(error as IDataObject) || error instanceof NodeOperationError) {
-			this.logger.warn(`Nothing to remove for the Servicely AI Tool: ${message}`);
+			this.logger.warn(`Nothing to remove for the Servicely AI Agent Tool: ${message}`);
 		} else {
-			this.logger.error(`Could not remove the Servicely AI Tool: ${message}`);
+			this.logger.error(`Could not remove the Servicely AI Agent Tool: ${message}`);
 		}
 	}
 

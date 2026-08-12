@@ -23,7 +23,7 @@ function makeContext(responseMode: string, childTypes: string[]) {
 	return {
 		getNodeParameter: (name: string, fallback?: unknown) =>
 			name === 'responseMode' ? responseMode : fallback,
-		getNode: () => ({ name: 'Servicely AI Tool', type: 'servicelyAiTool' }),
+		getNode: () => ({ name: 'Servicely AI Agent Tool', type: 'servicelyAiTool' }),
 		getChildNodes: () => childTypes.map((type, index) => ({ name: `n${index}`, type })),
 	} as unknown as IWebhookFunctions;
 }
@@ -170,14 +170,14 @@ describe('checkResponseModeConfiguration', () => {
 	it('refuses to answer from a response node the workflow does not have', () => {
 		expect(() =>
 			checkResponseModeConfiguration(makeContext('responseNode', ['n8n-nodes-base.set'])),
-		).toThrow('No Servicely AI Tool Response node found in the workflow');
+		).toThrow('No Servicely AI Agent Tool Response node found in the workflow');
 	});
 
 	it('refuses a response node that would never get to respond', () => {
 		for (const mode of ['onReceived', 'lastNode']) {
 			expect(() =>
 				checkResponseModeConfiguration(makeContext(mode, RESPONSE_NODE_TYPES)),
-			).toThrow('Unused Servicely AI Tool Response node found in the workflow');
+			).toThrow('Unused Servicely AI Agent Tool Response node found in the workflow');
 		}
 	});
 
@@ -189,6 +189,6 @@ describe('checkResponseModeConfiguration', () => {
 		}
 		expect(() =>
 			checkResponseModeConfiguration(makeContext('responseNode', ['other.notAResponseNode'])),
-		).toThrow('No Servicely AI Tool Response node found');
+		).toThrow('No Servicely AI Agent Tool Response node found');
 	});
 });

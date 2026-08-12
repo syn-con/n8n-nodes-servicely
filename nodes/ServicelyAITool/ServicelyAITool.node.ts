@@ -1,372 +1,342 @@
 import {
 	type IDataObject,
+	type IExecuteFunctions,
+	type IN8nHttpFullResponse,
+	type INodeExecutionData,
 	type INodeType,
 	type INodeTypeDescription,
-	type IWebhookFunctions,
-	type IWebhookResponseData,
+	jsonParse,
 	NodeConnectionTypes,
+	NodeOperationError,
 } from 'n8n-workflow';
 
-import { getAiAgents, getAiAssistants } from '../Servicely/SearchFunctions';
-import {
-	type AuthenticationResult,
-	AUTH_CREDENTIAL_NAME,
-	authenticateRequest,
-	WebhookAuthorizationError,
-} from './authentication';
-import { DEFAULT_EXECUTION_SCRIPT, readParameterDefinitions } from './parameters';
-import { toolRegistrationMethods } from './registration';
-import {
-	checkResponseModeConfiguration,
-	responseDataProperty,
-	responseModeNotices,
-	responseModeProperty,
-	responseOptions,
-	responseWebhookFields,
-	toolTimeoutProperty,
-} from './response';
-import { isPlainObject, validateBody } from './validation';
+import { DOCUMENTATION_URL, RESPONSE_DISPLAY_NAME, TOOL_CODEX } from './presentation';
 
-const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
+type RespondWith = 'success' | 'error';
+type SuccessData = 'allIncomingItems' | 'firstIncomingItem' | 'json' | 'noData';
+
+interface ResponseHeaders {
+	entries?: Array<{ name?: string; value?: string }>;
+}
+
+interface Options {
+	envelope?: boolean;
+	message?: string;
+	responseHeaders?: ResponseHeaders;
+}
+
+/** Status codes that must not carry a body. */
+const BODYLESS_STATUS_CODES = [204, 304];
 
 /**
- * Exposes a workflow as a tool a Servicely service desk agent can call. The node
- * declares the tool (name, prompt and typed parameters), serves it on an HTTP POST
- * endpoint and validates the request body against those parameters before the
- * workflow starts.
+ * Answers the agent that called a Servicely AI Agent Tool. Pairs with the
+ * {@link import('./ServicelyAIToolTrigger.node').ServicelyAIToolTrigger} trigger set to
+ * "Using Servicely AI Agent Tool Response Node".
  */
 export class ServicelyAITool implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'Servicely AI Tool',
-		name: 'servicelyAiTool',
+		displayName: RESPONSE_DISPLAY_NAME,
+		// Left as it is for the same reason the trigger's type is — see that node
+		name: 'servicelyAiToolResponse',
 		icon: { light: 'file:../../icons/servicely.svg', dark: 'file:../../icons/servicely.dark.svg' },
-		group: ['trigger'],
+		group: ['output'],
 		version: 1,
-		// The tool is named after the node, so the canvas already says which tool this
-		// is; the subtitle says where it answers instead
-		subtitle: '={{"POST /" + $parameter["path"]}}',
-		description: 'Expose this workflow as a tool for the Servicely service desk agent',
-		documentationUrl: 'https://docs-servicely.atlassian.net/wiki/spaces/SD/pages/2077523978',
-		eventTriggerDescription: 'Waiting for the agent to call the tool',
-		activationMessage: 'The tool can now be called on your production URL.',
+		subtitle: '={{$parameter["respondWith"] === "error" ? "Error" : "Success"}}',
+		description: 'Respond to the agent that called the Servicely AI Agent Tool',
+		documentationUrl: DOCUMENTATION_URL,
+		// The same codex as the trigger, so the two are filed and found together
+		codex: TOOL_CODEX,
 		defaults: {
-			name: 'Servicely AI Tool',
+			name: RESPONSE_DISPLAY_NAME,
 		},
-		inputs: [],
+		inputs: [NodeConnectionTypes.Main],
 		outputs: [NodeConnectionTypes.Main],
-		// This node defines a tool, it is not itself callable by an n8n agent
+		// This node only makes sense inside a workflow started by a tool call, not as a tool
 		usableAsTool: undefined,
-		credentials: [
-			{
-				// Reads the instance's agents for the AI Agents selector
-				name: 'servicelyApi',
-				'displayName': 'Servicely API',
-				required: true,
-			},
-			{
-				// Decides what a caller has to present; the endpoint is never public
-				name: AUTH_CREDENTIAL_NAME,
-				'displayName': 'Servicely AI Tool Auth',
-				required: true,
-			},
-		],
-		webhooks: [
-			{
-				name: 'default',
-				httpMethod: 'POST',
-				// Serve exactly the configured path instead of prefixing the internal webhook ID
-				isFullPath: true,
-				path: '={{$parameter["path"]}}',
-				// How the call is answered, declared rather than written by this node —
-				// see `response.ts`
-				...responseWebhookFields,
-			},
-		],
-		// `noDataExpression` on every field, deliberately. This node defines a tool
-		// rather than processing items: it has no input, so there is no `$json` to
-		// reference, and its values are read on activation — when no execution is
-		// running to resolve an expression against. A field that cannot be expressed
-		// says so in the UI instead of resolving to nothing at registration time.
 		properties: [
 			{
 				displayName:
-					'The attached Servicely AI Tool Auth credential decides what a caller has to present: Basic, Header or JWT authentication.',
-				name: 'authenticationNotice',
+					'The Servicely AI Agent Tool that starts this workflow must have "Respond" set to "Using Servicely AI Agent Tool Response Node" — it refuses a call otherwise, rather than leaving this node with an answer nobody is waiting for. n8n keeps the request open until this node runs, so a branch that never reaches it never answers, and the service desk stops waiting after the tool\'s Tool Timeout.',
+				name: 'responseModeNotice',
 				type: 'notice',
 				default: '',
 			},
 			{
-				displayName: 'Prompt',
-				name: 'prompt',
+				displayName: 'Respond With',
+				name: 'respondWith',
+				type: 'options',
+				options: [
+					{
+						name: 'Error',
+						value: 'error',
+						description: 'Respond with an error status code and message',
+					},
+					{
+						name: 'Success',
+						value: 'success',
+						description: 'Respond with a success status code and data',
+					},
+				],
+				default: 'success',
+				description: 'The kind of response to send back to the caller',
+			},
+			{
+				displayName: 'Response Code',
+				name: 'successResponseCode',
+				type: 'number',
+				typeOptions: {
+					minValue: 100,
+					maxValue: 599,
+				},
+				default: 200,
+				description: 'The HTTP status code to respond with',
+				displayOptions: { show: { respondWith: ['success'] } },
+			},
+			{
+				displayName: 'Data',
+				name: 'data',
+				type: 'options',
+				options: [
+					{
+						name: 'All Incoming Items',
+						value: 'allIncomingItems',
+						description: 'Respond with the JSON of all items reaching this node',
+					},
+					{
+						name: 'First Incoming Item',
+						value: 'firstIncomingItem',
+						description: 'Respond with the JSON of the first item reaching this node',
+					},
+					{
+						name: 'JSON',
+						value: 'json',
+						description: 'Respond with a JSON body you define below',
+					},
+					{
+						name: 'No Data',
+						value: 'noData',
+						description: 'Respond without any data',
+					},
+				],
+				default: 'firstIncomingItem',
+				description: 'The data to send back to the caller',
+				displayOptions: { show: { respondWith: ['success'] } },
+			},
+			{
+				displayName: 'Response Body',
+				name: 'responseBody',
+				type: 'json',
+				default: '{\n  "ok": true\n}',
+				typeOptions: {
+					rows: 4,
+				},
+				description: 'The JSON body to respond with',
+				displayOptions: { show: { respondWith: ['success'], data: ['json'] } },
+			},
+			{
+				displayName: 'Response Code',
+				name: 'errorResponseCode',
+				type: 'number',
+				typeOptions: {
+					minValue: 100,
+					maxValue: 599,
+				},
+				default: 400,
+				description: 'The HTTP status code to respond with',
+				displayOptions: { show: { respondWith: ['error'] } },
+			},
+			{
+				displayName: 'Error Message',
+				name: 'errorMessage',
 				type: 'string',
-				noDataExpression: true,
+				default: 'Request failed',
+				required: true,
+				description: 'The message describing what went wrong',
+				displayOptions: { show: { respondWith: ['error'] } },
+			},
+			{
+				displayName: 'Error Details',
+				name: 'errorDetails',
+				type: 'json',
+				default: '',
 				typeOptions: {
 					rows: 3,
 				},
-				default: '',
-				placeholder: 'e.g. Creates an incident for a user and returns its number',
-				required: true,
+				placeholder: '{{ $json.validation.errors }}',
 				description:
-					'Tells the agent what this tool does and when to call it. Exported with the tool.',
-			},
-			{
-				displayName: 'Path',
-				name: 'path',
-				type: 'string',
-				noDataExpression: true,
-				default: '',
-				placeholder: 'e.g. create-incident',
-				required: true,
-				description: 'The path this tool listens on, appended to the webhook base URL',
-			},
-			{
-				displayName: 'Parameters',
-				name: 'parameters',
-				placeholder: 'Add Parameter',
-				type: 'fixedCollection',
-				noDataExpression: true,
-				typeOptions: {
-					multipleValues: true,
-					sortable: true,
-				},
-				default: {},
-				description:
-					'The arguments of the tool. They are exported with it and every request is validated against them. A boolean IsProduction is always exported on top of these — the agent sends true unless it was asked for a test run — but it is not validated, so a call that omits it still runs. Declaring one here replaces it, and then it is validated like any other.',
-				options: [
-					{
-						name: 'values',
-						displayName: 'Parameter',
-						values: [
-							{
-								displayName: 'Param Name',
-								name: 'paramName',
-								type: 'string',
-								noDataExpression: true,
-								default: '',
-								placeholder: 'e.g. customerId',
-								description: 'Name of the argument, as the agent has to send it',
-								required: true,
-							},
-							{
-								displayName: 'Param Type',
-								name: 'paramType',
-								type: 'options',
-								noDataExpression: true,
-								options: [
-									{
-										name: 'Boolean',
-										value: 'boolean',
-									},
-									{
-										name: 'Integer',
-										value: 'integer',
-									},
-									{
-										name: 'Number',
-										value: 'number',
-									},
-									{
-										name: 'String',
-										value: 'string',
-									},
-								],
-								// The empty default is deliberate. n8n drops parameter values that equal
-								// their default when a workflow is saved, so a default that cannot be
-								// picked is what keeps paramType in the exported JSON — the tool
-								// definition then survives an import on another instance.
-								default: '',
-								description: 'The type the value must have. Defaults to String.',
-							},
-							{
-								displayName: 'Param Description',
-								name: 'paramDescription',
-								type: 'string',
-								noDataExpression: true,
-								default: '',
-								placeholder: 'e.g. ID of the customer the incident is raised for',
-								description: 'What this argument means. Exported with the tool.',
-							},
-						],
-					},
-				],
-			},
-			responseModeProperty,
-			...responseModeNotices,
-			responseDataProperty,
-			toolTimeoutProperty,
-			{
-				displayName: 'On Validation Error',
-				name: 'onValidationError',
-				type: 'options',
-				noDataExpression: true,
-				options: [
-					{
-						name: 'Respond 400 Bad Request',
-						value: 'respondError',
-						description: 'Reject the request with the validation errors, the workflow does not run',
-					},
-					{
-						name: 'Run Workflow Anyway',
-						value: 'continue',
-						description:
-							'Run the workflow and pass the validation errors on in the "validation" property',
-					},
-				],
-				default: 'respondError',
-				description: 'What to do when the request body does not match the parameters',
+					'Optional machine readable details added to the error, e.g. the validation errors of the Servicely AI Agent Tool',
+				displayOptions: { show: { respondWith: ['error'] } },
 			},
 			{
 				displayName: 'Options',
 				name: 'options',
 				type: 'collection',
-				noDataExpression: true,
 				placeholder: 'Add option',
 				default: {},
 				options: [
 					{
-						displayName: 'AI Agents',
-						name: 'aiAgents',
-						type: 'multiOptions',
-						noDataExpression: true,
-						typeOptions: {
-							loadOptionsMethod: 'getAiAgents',
-						},
-						default: [],
-						description:
-							"The Servicely AI agents this tool is exported to. The list shows SystemAIAgent records by Name; each agent is stored by its record ID. Activating the workflow adds the tool to those agents' Tools, and takes it out of the agents you deselect — so leaving this out unlinks the tool from every agent.",
-					},
-					{
-						displayName: 'AI Assistants',
-						name: 'aiAssistants',
-						type: 'multiOptions',
-						noDataExpression: true,
-						typeOptions: {
-							loadOptionsMethod: 'getAiAssistants',
-						},
-						default: [],
-						description:
-							"The Servicely AI assistants this tool is exported to, the same way as the agents above: SystemAIAssistant records by Name, stored by record ID, and reconciled against their Tools on activation.",
-					},
-					{
-						displayName: 'Allow Unknown Parameters',
-						name: 'allowUnknownParameters',
+						displayName: 'Envelope',
+						name: 'envelope',
 						type: 'boolean',
-						noDataExpression: true,
 						default: true,
 						description:
-							'Whether body properties that are not defined above are accepted. If turned off, they are reported as validation errors.',
+							'Whether the response is wrapped in { "success": true, "data": ... } or { "success": false, "error": ... }. If turned off, the data or the error is sent as is.',
 					},
 					{
-						displayName: 'Coerce Types',
-						name: 'coerceTypes',
-						type: 'boolean',
-						noDataExpression: true,
-						default: false,
-						description:
-							'Whether values are converted to the defined type before validation, e.g. the string "12" to the number 12. Useful for form encoded bodies.',
-					},
-					{
-						displayName: 'Execution Script',
-						name: 'executionScript',
+						displayName: 'Message',
+						name: 'message',
 						type: 'string',
-						noDataExpression: true,
-						typeOptions: {
-							rows: 12,
-							editor: 'jsEditor',
-							editorLanguage: 'javaScript',
-						},
-						default: DEFAULT_EXECUTION_SCRIPT,
-						description:
-							'Script the service desk runs when the agent calls this tool. Exported with it. Add this option only to replace the default script, which posts the call\'s parameters to this workflow and answers with what it returns. Every "@@URL@@" is replaced with this tool\'s webhook URL when the workflow is activated, so the script does not have to be edited when it moves between instances — quoted for you, unless you quoted the placeholder yourself.',
+						default: '',
+						description: 'Message added to a success response',
+						displayOptions: { show: { '/respondWith': ['success'] } },
 					},
-					// Everything the answer to a call is made of, for the modes that leave
-					// it to n8n rather than to a response node
-					...responseOptions,
+					{
+						displayName: 'Response Headers',
+						name: 'responseHeaders',
+						type: 'fixedCollection',
+						typeOptions: {
+							multipleValues: true,
+						},
+						default: {},
+						description: 'Headers to add to the response',
+						options: [
+							{
+								name: 'entries',
+								displayName: 'Header',
+								values: [
+									{
+										displayName: 'Name',
+										name: 'name',
+										type: 'string',
+										default: '',
+										placeholder: 'e.g. X-Request-ID',
+										description: 'Name of the header',
+									},
+									{
+										displayName: 'Value',
+										name: 'value',
+										type: 'string',
+										default: '',
+										description: 'Value of the header',
+									},
+								],
+							},
+						],
+					},
 				],
 			},
 		],
 	};
 
+	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
+		const items = this.getInputData();
+		const respondWith = this.getNodeParameter('respondWith', 0) as RespondWith;
+		const options = this.getNodeParameter('options', 0, {}) as Options;
+		const envelope = options.envelope ?? true;
 
+		let statusCode: number;
+		let body: IDataObject | IDataObject[] | undefined;
 
-	/** Only the two AI registries: the pickers of the Servicely node have no counterpart here. */
-	methods = { loadOptions: { getAiAgents, getAiAssistants } };
+		if (respondWith === 'error') {
+			statusCode = this.getNodeParameter('errorResponseCode', 0) as number;
+			const message = this.getNodeParameter('errorMessage', 0) as string;
+			const details = parseOptionalJson(this, 'errorDetails');
 
-	/** Registers the tool in the service desk on activation, removes it on deactivation. */
-	webhookMethods = toolRegistrationMethods;
-
-	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
-		// Before anything is let in: a Respond setting the workflow cannot honour is a
-		// call that would never be answered, and saying so beats hanging.
-		checkResponseModeConfiguration(this);
-
-		const onValidationError = this.getNodeParameter('onValidationError') as
-			| 'respondError'
-			| 'continue';
-		const options = this.getNodeParameter('options', {}) as {
-			allowUnknownParameters?: boolean;
-			coerceTypes?: boolean;
-		};
-
-		const response = this.getResponseObject();
-
-		let authentication: AuthenticationResult | undefined;
-		try {
-			authentication = await authenticateRequest(this);
-		} catch (error) {
-			if (error instanceof WebhookAuthorizationError) {
-				response.writeHead(error.responseCode, { ...JSON_HEADERS, ...error.headers });
-				response.end(JSON.stringify({ success: false, error: { message: error.message } }));
-				return { noWebhookResponse: true };
+			const error: IDataObject = { message };
+			if (details !== undefined) {
+				error.details = details;
 			}
-			throw error;
+			body = envelope ? { success: false, error } : error;
+		} else {
+			statusCode = this.getNodeParameter('successResponseCode', 0) as number;
+			const data = this.getNodeParameter('data', 0) as SuccessData;
+
+			let payload: IDataObject | IDataObject[] | undefined;
+			switch (data) {
+				case 'allIncomingItems':
+					payload = items.map((item) => item.json);
+					break;
+				case 'firstIncomingItem':
+					payload = items[0]?.json ?? {};
+					break;
+				case 'json':
+					payload = parseJsonParameter(this, 'responseBody');
+					break;
+				case 'noData':
+					payload = undefined;
+					break;
+				// no default
+			}
+
+			if (envelope) {
+				const envelopeBody: IDataObject = { success: true };
+				if (options.message) {
+					envelopeBody.message = options.message;
+				}
+				if (payload !== undefined) {
+					envelopeBody.data = payload;
+				}
+				body = envelopeBody;
+			} else {
+				body = payload;
+			}
 		}
 
-		const definitions = readParameterDefinitions(this);
-		const body = this.getBodyData();
-
-		const result = isPlainObject(body)
-			? validateBody(body, definitions, {
-				allowUnknownParameters: options.allowUnknownParameters ?? true,
-				coerceTypes: options.coerceTypes ?? false,
-			})
-			: {
-				valid: false,
-				errors: [{ key: '', message: 'The request body must be a JSON object' }],
-				parameters: {},
-			};
-
-		if (!result.valid && onValidationError === 'respondError') {
-			response.writeHead(400, JSON_HEADERS);
-			response.end(
-				JSON.stringify({
-					success: false,
-					error: { message: 'Request body validation failed', details: result.errors },
-				}),
-			);
-			return { noWebhookResponse: true };
+		const headers: IDataObject = {};
+		for (const entry of options.responseHeaders?.entries ?? []) {
+			const name = (entry.name ?? '').trim();
+			if (!name) {
+				continue;
+			}
+			headers[name.toLowerCase()] = entry.value ?? '';
+		}
+		if (body !== undefined && headers['content-type'] === undefined) {
+			headers['content-type'] = 'application/json; charset=utf-8';
 		}
 
-		const json: IDataObject = {
-			body,
-			parameters: result.parameters,
-			headers: this.getHeaderData(),
-			query: this.getQueryData(),
-			params: this.getParamsData(),
-			validation: { valid: result.valid, errors: result.errors },
+		const response: IN8nHttpFullResponse = {
+			body: BODYLESS_STATUS_CODES.includes(statusCode) ? undefined : body,
+			headers,
+			statusCode,
 		};
-		if (authentication?.jwtPayload !== undefined) {
-			json.jwt = authentication.jwtPayload;
-		}
 
-		return {
-			// The body of the "Immediately" mode, and only when the node was not told
-			// something more specific: the Response Data option overrides it, and No
-			// Response Body drops it. The other modes answer from the workflow, so n8n
-			// ignores it there.
-			webhookResponse: { success: true, message: 'Workflow was started' },
-			workflowData: [[{ json }]],
-		};
+		this.sendResponse(response);
+
+		return [items];
 	}
 }
 
+/** Reads a `json` typed parameter, accepting both a JSON string and an already resolved value. */
+function parseJsonParameter(
+	context: IExecuteFunctions,
+	parameterName: string,
+): IDataObject | IDataObject[] {
+	const value = context.getNodeParameter(parameterName, 0) as unknown;
+
+	if (typeof value !== 'string') {
+		return value as IDataObject;
+	}
+
+	try {
+		return jsonParse<IDataObject>(value);
+	} catch {
+		throw new NodeOperationError(
+			context.getNode(),
+			`The value in "${parameterName}" is not valid JSON`,
+		);
+	}
+}
+
+/** Same as {@link parseJsonParameter} but returns `undefined` for an empty parameter. */
+function parseOptionalJson(
+	context: IExecuteFunctions,
+	parameterName: string,
+): IDataObject | IDataObject[] | undefined {
+	const value = context.getNodeParameter(parameterName, 0) as unknown;
+
+	if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) {
+		return undefined;
+	}
+
+	return parseJsonParameter(context, parameterName);
+}

@@ -19,7 +19,7 @@ const shownFor = (name: string) => property(name).displayOptions?.show?.type;
 describe('shape', () => {
   it('is registered under the name the AI Tool node asks for', () => {
     expect(credential.name).toBe('servicelyAiToolAuthApi');
-    expect(credential.displayName).toBe('Servicely AI Tool Auth API');
+    expect(credential.displayName).toBe('Servicely AI Agent Tool Auth API');
   });
 
   it('offers the three authentication methods the node implements', () => {

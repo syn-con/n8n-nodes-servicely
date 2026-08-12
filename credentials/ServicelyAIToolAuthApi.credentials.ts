@@ -5,7 +5,7 @@ import type { Icon, ICredentialType, INodeProperties } from 'n8n-workflow';
 export class ServicelyAIToolAuthApi implements ICredentialType {
 	name = 'servicelyAiToolAuthApi';
 
-	displayName = 'Servicely AI Tool Auth API';
+	displayName = 'Servicely AI Agent Tool Auth API';
 
 	icon: Icon = { light: 'file:../icons/servicely.svg', dark: 'file:../icons/servicely.dark.svg' };
 
@@ -34,7 +34,7 @@ export class ServicelyAIToolAuthApi implements ICredentialType {
 				},
 			],
 			default: 'basicAuth',
-			description: 'The authentication method a call to the Servicely AI Tool must use',
+			description: 'The authentication method a call to the Servicely AI Agent Tool must use',
 		},
 		{
 			displayName: 'User',

@@ -32,7 +32,7 @@ export interface ResponseParameters {
 
 /**
  * The status code n8n answers with, for every mode that does not have a
- * Servicely AI Tool Response node to take the decision.
+ * Servicely AI Agent Tool Response node to take the decision.
  *
  * Interpolated into an expression, so it must stand on its own: no imports, no
  * helpers, nothing from this module's scope.
@@ -53,7 +53,7 @@ export const getResponseCode = (parameters: ResponseParameters) => {
  * Finishes*, and to whatever `webhook()` returned as `webhookResponse` for
  * *Immediately*).
  *
- * `Using Servicely AI Tool Response Node` answers nothing here on purpose: that
+ * `Using Servicely AI Agent Tool Response Node` answers nothing here on purpose: that
  * node sends the whole response, so a body declared next to it would be a
  * second answer to the same request.
  *
@@ -109,10 +109,10 @@ export function checkResponseModeConfiguration(context: IWebhookFunctions): void
 	if (responseNodes.length === 0 && responseMode === 'responseNode') {
 		throw new WorkflowConfigurationError(
 			context.getNode(),
-			new Error('No Servicely AI Tool Response node found in the workflow'),
+			new Error('No Servicely AI Agent Tool Response node found in the workflow'),
 			{
 				description:
-					'Add a Servicely AI Tool Response node to this workflow to answer the agent, or choose another option for the "Respond" parameter.',
+					'Add a Servicely AI Agent Tool Response node to this workflow to answer the agent, or choose another option for the "Respond" parameter.',
 			},
 		);
 	}
@@ -120,10 +120,10 @@ export function checkResponseModeConfiguration(context: IWebhookFunctions): void
 	if (responseNodes.length > 0 && responseMode !== 'responseNode') {
 		throw new WorkflowConfigurationError(
 			context.getNode(),
-			new Error('Unused Servicely AI Tool Response node found in the workflow'),
+			new Error('Unused Servicely AI Agent Tool Response node found in the workflow'),
 			{
 				description:
-					'Set the "Respond" parameter to "Using Servicely AI Tool Response Node", or remove the Servicely AI Tool Response node.',
+					'Set the "Respond" parameter to "Using Servicely AI Agent Tool Response Node", or remove the Servicely AI Agent Tool Response node.',
 			},
 		);
 	}
@@ -163,7 +163,7 @@ export const responseModeProperty: INodeProperties = {
 			description: 'Returns data of the last-executed node',
 		},
 		{
-			name: 'Using Servicely AI Tool Response Node',
+			name: 'Using Servicely AI Agent Tool Response Node',
 			value: 'responseNode',
 			description: 'Response defined in that node',
 		},
@@ -176,7 +176,7 @@ export const responseModeProperty: INodeProperties = {
 export const responseModeNotices: INodeProperties[] = [
 	{
 		displayName:
-			'Insert a Servicely AI Tool Response node to control when and how you respond. The request stays open until that node runs, so a workflow that never reaches it never answers.',
+			'Insert a Servicely AI Agent Tool Response node to control when and how you respond. The request stays open until that node runs, so a workflow that never reaches it never answers.',
 		name: 'responseNodeNotice',
 		type: 'notice',
 		default: '',

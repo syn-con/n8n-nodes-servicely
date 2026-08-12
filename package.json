@@ -23,7 +23,7 @@
       "dist/nodes/Servicely/Servicely.node.js",
       "dist/nodes/Servicely/ServicelyTrigger.node.js",
       "dist/nodes/ServicelyAITool/ServicelyAITool.node.js",
-      "dist/nodes/ServicelyAITool/ServicelyAIToolResponse.node.js"
+      "dist/nodes/ServicelyAITool/ServicelyAIToolTrigger.node.js"
     ]
   },
   "scripts": {

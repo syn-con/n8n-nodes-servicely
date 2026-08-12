@@ -15,7 +15,7 @@ type Headers = Record<string, string | string[] | undefined>;
 function makeCtx(credential: Record<string, unknown> | undefined, headers: Headers = {}) {
 	return {
 		getNode: () => ({
-			name: 'Servicely AI Tool',
+			name: 'Servicely AI Agent Tool',
 			credentials: credential === undefined ? undefined : { [AUTH_CREDENTIAL_NAME]: { id: '1' } },
 		}),
 		getCredentials: async () => credential,

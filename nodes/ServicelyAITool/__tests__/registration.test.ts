@@ -461,7 +461,7 @@ describe('create', () => {
 		const ctx = makeHookCtx({ responses: [ok([]), ok({}), ok([])] });
 
 		await expect(createTool.call(ctx)).rejects.toThrow(
-			'The registered Servicely AI Tool has no id',
+			'The registered Servicely AI Agent Tool has no id',
 		);
 	});
 });
@@ -967,7 +967,7 @@ describe('delete', () => {
 
 		await expect(deleteTool.call(ctx)).resolves.toBe(true);
 		expect(ctx.calls).toHaveLength(1);
-		expect(ctx.warnings[0]).toContain('No Servicely AI Tool is registered');
+		expect(ctx.warnings[0]).toContain('No Servicely AI Agent Tool is registered');
 	});
 
 	// n8n clears a workflow's webhooks on the way into activation too, so a throw
@@ -984,7 +984,7 @@ describe('delete', () => {
 		const ctx = makeHookCtx({ responses: [ok([TOOL]), { status: 401, body: {} }] });
 
 		await expect(deleteTool.call(ctx)).resolves.toBe(true);
-		expect(ctx.errors.join()).toContain('Could not remove the Servicely AI Tool');
+		expect(ctx.errors.join()).toContain('Could not remove the Servicely AI Agent Tool');
 		expect(ctx.errors.join()).toContain('Authentication failed');
 	});
 
