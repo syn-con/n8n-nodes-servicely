@@ -22,7 +22,14 @@ interface ParameterCollection {
 
 export const PARAMETER_TYPES: ParameterType[] = ['boolean', 'integer', 'number', 'string'];
 
-/** How long the caller waits when the node does not say, in seconds. */
+/**
+ * How long the service desk waits for a tool call to be answered, in seconds,
+ * mirrored into the tool's `TimeoutSeconds` on registration.
+ *
+ * n8n holds the request open for as long as the workflow takes — the Webhook
+ * node it follows imposes no deadline of its own — so this is the service
+ * desk's patience, and the node has nothing to say about it.
+ */
 export const DEFAULT_RESPONSE_TIMEOUT_SECONDS = 60;
 
 /**
@@ -131,17 +138,4 @@ export function readParameterDefinitions(context: ParameterContext): ParameterDe
 	}
 
 	return definitions;
-}
-
-/**
- * The configured response timeout in seconds, for the same reason the parameters
- * live here: the webhook arms its timer with it, and the registration mirrors it
- * into the tool's `TimeoutSeconds` so the service desk stops waiting when this
- * node stops answering.
- *
- * Not sanitised — the webhook decides what an unusable value means (no timer) and
- * the registration decides what it sends instead.
- */
-export function readResponseTimeoutSeconds(context: ParameterContext): number {
-	return Number(context.getNodeParameter('responseTimeout', DEFAULT_RESPONSE_TIMEOUT_SECONDS));
 }

@@ -51,7 +51,7 @@ export class ServicelyAIToolResponse implements INodeType {
 		properties: [
 			{
 				displayName:
-					'The Servicely AI Tool that starts this workflow must have "Respond" set to "Using Servicely AI Tool Response Node". Answer before its Response Node Timeout elapses, otherwise the caller already got a 504.',
+					'The Servicely AI Tool that starts this workflow must have "Respond" set to "Using Servicely AI Tool Response Node" — it refuses a call otherwise, rather than leaving this node with an answer nobody is waiting for. The caller waits until this node runs, so a branch that never reaches it never answers.',
 				name: 'responseModeNotice',
 				type: 'notice',
 				default: '',

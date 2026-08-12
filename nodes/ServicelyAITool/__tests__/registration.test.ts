@@ -20,6 +20,10 @@ interface HookStubOptions {
 	/** Responses handed out in order; the last one repeats. */
 	responses?: Array<{ status: number; body?: unknown }>;
 	workflow?: { id?: string; name?: string };
+	/** The node the hooks register: its id is the tool's Key, its name the tool's Name. */
+	node?: { id?: string; name?: string };
+	/** What `getInstanceBaseUrl` answers, which is what the workflow link is built from. */
+	instanceBaseUrl?: string;
 	/** n8n passes 'manual' when a test webhook is created, 'internal' when it is torn down. */
 	mode?: string;
 	/** What `getNodeWebhookUrl` answers; the test base URL marks a test run. */
@@ -81,7 +85,10 @@ function makeHookCtx(options: HookStubOptions = {}) {
 			'webhookUrl' in options
 				? options.webhookUrl
 				: 'https://n8n.example.com/webhook/create-incident',
-		getNode: () => ({ name: 'Servicely AI Tool' }),
+		getNode: () => ({ id: 'node-7', name: 'Create Incident', ...options.node }),
+		// `in`, so a test can force the "the instance does not know its URL" case
+		getInstanceBaseUrl: () =>
+			'instanceBaseUrl' in options ? options.instanceBaseUrl : 'https://n8n.example.com/',
 		getNodeParameter: (name: string, fallback?: unknown) =>
 			name in params ? params[name] : fallback,
 		helpers: {
@@ -129,13 +136,17 @@ function makeHookCtx(options: HookStubOptions = {}) {
 	};
 }
 
+/** What a registered tool says about where it came from: the node, the workflow, its link. */
+const DESCRIPTION =
+	'Created by the "Create Incident" node of the n8n workflow "My Workflow" (https://n8n.example.com/workflow/wf-1)';
+
 /** A 200 carrying Servicely's `{ data }` envelope. */
 const ok = (data: unknown) => ({ status: 200, body: { data } });
 
 /** What the API answers for a path whose table does not exist. */
 const notFound = { status: 404, body: {} };
 
-const TOOL = { id: 'tool-9', Key: 'wf-1', Name: '[n8n] My Workflow' };
+const TOOL = { id: 'tool-9', Key: 'node-7', Name: '[n8n] Create Incident' };
 
 /** A Parameters collection as the node's fixedCollection stores it. */
 const declares = (
@@ -156,7 +167,7 @@ describe('checkExists', () => {
 		expect(ctx.calls[0].method).toBe('GET');
 		expect(ctx.calls[0].url).toBe('/v1/SystemAITool');
 		expect(ctx.calls[0].qs).toEqual({
-			query: JSON.stringify({ and: [{ fieldName: 'Key', operator: '=', value: 'wf-1' }] }),
+			query: JSON.stringify({ and: [{ fieldName: 'Key', operator: '=', value: 'node-7' }] }),
 			page: 1,
 			page_size: 1,
 		});
@@ -168,10 +179,17 @@ describe('checkExists', () => {
 		await expect(checkToolExists.call(ctx)).resolves.toBe(false);
 	});
 
-	it('refuses to work on a workflow that has no id yet', async () => {
-		const ctx = makeHookCtx({ workflow: { id: undefined } });
+	it('refuses to work on a node that has no id yet', async () => {
+		const ctx = makeHookCtx({ node: { id: undefined } });
 
-		await expect(checkToolExists.call(ctx)).rejects.toThrow('The workflow has no id yet');
+		await expect(checkToolExists.call(ctx)).rejects.toThrow('The node has no id yet');
+	});
+
+	// The Key is the node's, so the workflow not being saved is not this hook's problem
+	it('looks a tool up for a workflow that has no id', async () => {
+		const ctx = makeHookCtx({ responses: [ok([TOOL])], workflow: { id: undefined } });
+
+		await expect(checkToolExists.call(ctx)).resolves.toBe(true);
 	});
 
 	it('reads a 404 as "no tool", not as a failure', async () => {
@@ -182,7 +200,7 @@ describe('checkExists', () => {
 });
 
 describe('create', () => {
-	it('posts the tool keyed by the workflow id when the Key matches nothing', async () => {
+	it('posts the tool keyed by the node id, named after the node', async () => {
 		const ctx = makeHookCtx({ responses: [ok([]), ok({ id: 'tool-9' })] });
 
 		await expect(createTool.call(ctx)).resolves.toBe(true);
@@ -190,11 +208,11 @@ describe('create', () => {
 		expect(ctx.calls[1].method).toBe('POST');
 		expect(ctx.calls[1].url).toBe('/v1/SystemAITool');
 		expect(ctx.calls[1].body).toEqual({
-			Key: 'wf-1',
-			Name: '[n8n] My Workflow',
+			Key: 'node-7',
+			Name: '[n8n] Create Incident',
 			Active: true,
 			SelectionPrompt: 'Creates an incident',
-			Description: 'Created by the n8n workflow "My Workflow"',
+			Description: DESCRIPTION,
 			TimeoutSeconds: 60,
 			ExecutionScript: RESOLVED_DEFAULT_SCRIPT,
 		});
@@ -210,10 +228,10 @@ describe('create', () => {
 		expect(ctx.calls[1].method).toBe('PATCH');
 		expect(ctx.calls[1].url).toBe('/v1/SystemAITool/tool-9');
 		expect(ctx.calls[1].body).toEqual({
-			Name: '[n8n] My Workflow',
+			Name: '[n8n] Create Incident',
 			Active: true,
 			SelectionPrompt: 'Creates an incident, now with feeling',
-			Description: 'Created by the n8n workflow "My Workflow"',
+			Description: DESCRIPTION,
 			TimeoutSeconds: 60,
 			ExecutionScript: RESOLVED_DEFAULT_SCRIPT,
 		});
@@ -315,23 +333,12 @@ describe('create', () => {
 		expect(ctx.calls).toHaveLength(0);
 	});
 
-	it('mirrors the configured response timeout into TimeoutSeconds', async () => {
+	// n8n keeps the request open for as long as the workflow runs, so there is no
+	// node-side deadline to mirror — only the patience the service desk is given.
+	it('registers the tool with the standard TimeoutSeconds', async () => {
 		const ctx = makeHookCtx({
 			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
 			params: { responseTimeout: 120 },
-		});
-
-		await createTool.call(ctx);
-
-		expect(ctx.calls[1].body).toMatchObject({ TimeoutSeconds: 120 });
-	});
-
-	// The field has to be a number, and the node's default is how long it waits when
-	// its own value is unusable.
-	it('falls back to the default timeout when the node has no usable one', async () => {
-		const ctx = makeHookCtx({
-			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
-			params: { responseTimeout: '' },
 		});
 
 		await createTool.call(ctx);
@@ -347,7 +354,23 @@ describe('create', () => {
 		expect(ctx.calls[1].body).toMatchObject({ Active: true });
 	});
 
-	it('falls back to the workflow id when the workflow has no name', async () => {
+	it('renames the tool with the node', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
+			node: { name: 'Close Incident' },
+		});
+
+		await createTool.call(ctx);
+
+		expect(ctx.calls[1].body).toMatchObject({
+			Name: '[n8n] Close Incident',
+			Description:
+				'Created by the "Close Incident" node of the n8n workflow "My Workflow" (https://n8n.example.com/workflow/wf-1)',
+		});
+	});
+
+	// Whatever the description cannot resolve is left out rather than named as unknown
+	it('names the workflow by its id when it has no name', async () => {
 		const ctx = makeHookCtx({
 			responses: [ok([]), ok({ id: 'tool-9' })],
 			workflow: { name: undefined },
@@ -356,9 +379,34 @@ describe('create', () => {
 		await createTool.call(ctx);
 
 		expect(ctx.calls[1].body).toMatchObject({
-			Name: '[n8n] wf-1',
-			Description: 'Created by the n8n workflow "wf-1"',
+			Name: '[n8n] Create Incident',
+			Description:
+				'Created by the "Create Incident" node of the n8n workflow "wf-1" (https://n8n.example.com/workflow/wf-1)',
 		});
+	});
+
+	it('leaves the link out when the instance does not say where it is reachable', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([]), ok({ id: 'tool-9' })],
+			instanceBaseUrl: '',
+		});
+
+		await createTool.call(ctx);
+
+		expect(ctx.calls[1].body).toMatchObject({
+			Description: 'Created by the "Create Incident" node of the n8n workflow "My Workflow"',
+		});
+	});
+
+	it('links to the workflow whether or not the base URL ends in a slash', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([]), ok({ id: 'tool-9' })],
+			instanceBaseUrl: 'https://n8n.example.com',
+		});
+
+		await createTool.call(ctx);
+
+		expect(ctx.calls[1].body).toMatchObject({ Description: DESCRIPTION });
 	});
 
 	it('sends an empty SelectionPrompt when the node has no prompt', async () => {
@@ -889,7 +937,7 @@ describe('delete', () => {
 
 		await expect(deleteTool.call(ctx)).resolves.toBe(true);
 		expect(ctx.calls[0].qs).toEqual({
-			query: JSON.stringify({ and: [{ fieldName: 'Key', operator: '=', value: 'wf-1' }] }),
+			query: JSON.stringify({ and: [{ fieldName: 'Key', operator: '=', value: 'node-7' }] }),
 			page: 1,
 			page_size: 1,
 		});
@@ -925,8 +973,8 @@ describe('delete', () => {
 		expect(ctx.errors.join()).toContain('Authentication failed');
 	});
 
-	it('does not fail deactivation for a workflow with no id', async () => {
-		const ctx = makeHookCtx({ workflow: { id: undefined } });
+	it('does not fail deactivation for a node with no id', async () => {
+		const ctx = makeHookCtx({ node: { id: undefined } });
 
 		await expect(deleteTool.call(ctx)).resolves.toBe(true);
 		expect(ctx.calls).toHaveLength(0);
@@ -987,11 +1035,20 @@ describe('test runs', () => {
 });
 
 describe('a second AI Tool node in the same workflow', () => {
-	it('finds the first node’s record and registers nothing', async () => {
-		const ctx = makeHookCtx({ responses: [ok([TOOL])] });
+	// The Key is the node's, so each node registers its own tool: the second one
+	// finds nothing under its own id and creates a record of its own.
+	it('registers a tool of its own rather than finding the first node’s', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([]), ok({ id: 'tool-10' })],
+			node: { id: 'node-8', name: 'Close Incident' },
+		});
 
-		// n8n skips create entirely once checkExists answers true
-		await expect(checkToolExists.call(ctx)).resolves.toBe(true);
-		expect(ctx.calls).toHaveLength(1);
+		await expect(checkToolExists.call(ctx)).resolves.toBe(false);
+		expect(ctx.calls[0].qs).toMatchObject({
+			query: JSON.stringify({ and: [{ fieldName: 'Key', operator: '=', value: 'node-8' }] }),
+		});
+
+		await createTool.call(ctx);
+		expect(ctx.calls[2].body).toMatchObject({ Key: 'node-8', Name: '[n8n] Close Incident' });
 	});
 });

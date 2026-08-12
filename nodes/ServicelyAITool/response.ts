@@ -1,0 +1,327 @@
+import {
+	type INodeProperties,
+	type IWebhookFunctions,
+	WorkflowConfigurationError,
+} from 'n8n-workflow';
+
+/**
+ * How the AI Tool answers a call, modelled on n8n's own Webhook node
+ * (`packages/nodes-base/nodes/Webhook`): the node itself never writes the
+ * response for a mode that answers later. It only *declares* — in its webhook
+ * description — the mode, the status code and what data to send, and n8n's
+ * webhook layer does the answering.
+ *
+ * The description fields are expressions, evaluated per request against
+ * `$parameter`. The two that read more than one parameter are written as
+ * functions and interpolated into their expression, which is how the Webhook
+ * node states the same rules once instead of twice.
+ */
+
+/** The parameters the response expressions read. */
+export interface ResponseParameters {
+	responseMode?: string;
+	responseData?: string;
+	options?: {
+		responseCode?: number;
+		responseData?: string;
+		noResponseBody?: boolean;
+	};
+}
+
+/**
+ * The status code n8n answers with, for every mode that does not have a
+ * Servicely AI Tool Response node to take the decision.
+ *
+ * Interpolated into an expression, so it must stand on its own: no imports, no
+ * helpers, nothing from this module's scope.
+ */
+export const getResponseCode = (parameters: ResponseParameters) => {
+	const code = parameters.options?.responseCode;
+	if (typeof code === 'number' && code >= 100 && code <= 599) {
+		return code;
+	}
+	return 200;
+};
+
+/**
+ * What n8n puts in the body, as the value the webhook layer knows:
+ * `allEntries` / `firstEntryJson` for the last node's data, `noData` for an
+ * empty body, a plain string for a fixed reply, or nothing — which leaves the
+ * default for the mode (n8n falls back to `firstEntryJson` for *When Last Node
+ * Finishes*, and to whatever `webhook()` returned as `webhookResponse` for
+ * *Immediately*).
+ *
+ * `Using Servicely AI Tool Response Node` answers nothing here on purpose: that
+ * node sends the whole response, so a body declared next to it would be a
+ * second answer to the same request.
+ *
+ * Interpolated into an expression — see {@link getResponseCode}.
+ */
+export const getResponseData = (parameters: ResponseParameters) => {
+	const { responseMode, responseData, options } = parameters;
+
+	if (responseMode === 'lastNode' && responseData) {
+		return responseData;
+	}
+
+	if (responseMode === 'onReceived' && options?.responseData) {
+		return options.responseData;
+	}
+
+	if (responseMode !== 'responseNode' && options?.noResponseBody) {
+		return 'noData';
+	}
+
+	return undefined;
+};
+
+/**
+ * The name of the response node, as it appears in a workflow. n8n prefixes a
+ * community node's type with the package it came from, and the package can be
+ * installed under more than one name over a node's life, so the suffix is what
+ * identifies it.
+ */
+const RESPONSE_NODE_TYPE = 'servicelyAiToolResponse';
+
+function isResponseNode(type: string): boolean {
+	return type === RESPONSE_NODE_TYPE || type.endsWith(`.${RESPONSE_NODE_TYPE}`);
+}
+
+/**
+ * Refuses a workflow whose Respond setting and wiring disagree, before the
+ * request is let in — the Webhook node's `checkResponseModeConfiguration`.
+ *
+ * Both halves are the same mistake seen from either side. A tool set to answer
+ * from a response node that has none would leave the agent waiting for an
+ * answer nobody sends, and a response node under any other mode never gets to
+ * send the answer it was configured with, because n8n has already replied by
+ * the time it runs. Saying so costs the caller a 500 once; the alternative is a
+ * workflow that looks like it works.
+ */
+export function checkResponseModeConfiguration(context: IWebhookFunctions): void {
+	const responseMode = context.getNodeParameter('responseMode', 'responseNode') as string;
+	const responseNodes = context
+		.getChildNodes(context.getNode().name)
+		.filter((node) => isResponseNode(node.type));
+
+	if (responseNodes.length === 0 && responseMode === 'responseNode') {
+		throw new WorkflowConfigurationError(
+			context.getNode(),
+			new Error('No Servicely AI Tool Response node found in the workflow'),
+			{
+				description:
+					'Add a Servicely AI Tool Response node to this workflow to answer the agent, or choose another option for the "Respond" parameter.',
+			},
+		);
+	}
+
+	if (responseNodes.length > 0 && responseMode !== 'responseNode') {
+		throw new WorkflowConfigurationError(
+			context.getNode(),
+			new Error('Unused Servicely AI Tool Response node found in the workflow'),
+			{
+				description:
+					'Set the "Respond" parameter to "Using Servicely AI Tool Response Node", or remove the Servicely AI Tool Response node.',
+			},
+		);
+	}
+}
+
+/** The webhook description fields deciding how a call is answered. */
+export const responseWebhookFields = {
+	responseCode: `={{(${getResponseCode})($parameter)}}`,
+	responseMode: '={{$parameter["responseMode"]}}',
+	responseData: `={{(${getResponseData})($parameter)}}`,
+	responseContentType: '={{$parameter["options"]["responseContentType"]}}',
+	responsePropertyName: '={{$parameter["options"]["responsePropertyName"]}}',
+	responseHeaders: '={{$parameter["options"]["responseHeaders"]}}',
+};
+
+/**
+ * The node's Respond selector. The default is the response node, and not n8n's
+ * `onReceived`: a tool exists to answer the agent with something it can use,
+ * which is what that mode is for. It also has to stay put — n8n drops a
+ * parameter left at its default when a workflow is saved, so moving the default
+ * would silently move every workflow that never changed it.
+ */
+export const responseModeProperty: INodeProperties = {
+	displayName: 'Respond',
+	name: 'responseMode',
+	type: 'options',
+	noDataExpression: true,
+	options: [
+		{
+			name: 'Immediately',
+			value: 'onReceived',
+			description: 'As soon as this node validated the request',
+		},
+		{
+			name: 'When Last Node Finishes',
+			value: 'lastNode',
+			description: 'Returns data of the last-executed node',
+		},
+		{
+			name: 'Using Servicely AI Tool Response Node',
+			value: 'responseNode',
+			description: 'Response defined in that node',
+		},
+	],
+	default: 'responseNode',
+	description: 'When and how to respond to the calling agent',
+};
+
+/** The notices telling each mode where its response actually comes from. */
+export const responseModeNotices: INodeProperties[] = [
+	{
+		displayName:
+			'Insert a Servicely AI Tool Response node to control when and how you respond. The request stays open until that node runs, so a workflow that never reaches it never answers.',
+		name: 'responseNodeNotice',
+		type: 'notice',
+		default: '',
+		displayOptions: { show: { responseMode: ['responseNode'] } },
+	},
+	{
+		displayName:
+			'If you are sending back a response, add a "Content-Type" response header with the appropriate value to avoid unexpected behavior',
+		name: 'contentTypeNotice',
+		type: 'notice',
+		default: '',
+		displayOptions: { show: { responseMode: ['onReceived'] } },
+	},
+];
+
+/** What the last node's data is turned into, for the mode that waits for it. */
+export const responseDataProperty: INodeProperties = {
+	displayName: 'Response Data',
+	name: 'responseData',
+	type: 'options',
+	noDataExpression: true,
+	displayOptions: { show: { responseMode: ['lastNode'] } },
+	options: [
+		{
+			name: 'All Entries',
+			value: 'allEntries',
+			description: 'Returns all the entries of the last node. Always returns an array.',
+		},
+		{
+			name: 'First Entry JSON',
+			value: 'firstEntryJson',
+			description:
+				'Returns the JSON data of the first entry of the last node. Always returns a JSON object.',
+		},
+		{
+			name: 'No Response Body',
+			value: 'noData',
+			description: 'Returns without a body',
+		},
+	],
+	default: 'firstEntryJson',
+	description: 'What data should be returned',
+};
+
+/**
+ * The entries the Respond modes add to the node's Options collection. Kept in
+ * the order the collection is written in — alphabetical by title — so they can
+ * be spliced in as they are.
+ */
+export const responseOptions: INodeProperties[] = [
+	{
+		displayName: 'No Response Body',
+		name: 'noResponseBody',
+		type: 'boolean',
+		noDataExpression: true,
+		default: false,
+		description: 'Whether to send any body in the response',
+		displayOptions: { show: { '/responseMode': ['onReceived'] } },
+	},
+	{
+		displayName: 'Response Code',
+		name: 'responseCode',
+		type: 'number',
+		noDataExpression: true,
+		typeOptions: {
+			minValue: 100,
+			maxValue: 599,
+		},
+		default: 200,
+		description: 'The HTTP status code to answer with',
+		// The response node carries its own status code, so this would only
+		// contradict it.
+		displayOptions: { hide: { '/responseMode': ['responseNode'] } },
+	},
+	{
+		displayName: 'Response Content-Type',
+		name: 'responseContentType',
+		type: 'string',
+		noDataExpression: true,
+		default: '',
+		placeholder: 'e.g. application/xml',
+		description:
+			'Set a custom content-type to return if another one as the "application/json" should be returned',
+		displayOptions: {
+			show: { '/responseMode': ['lastNode'], '/responseData': ['firstEntryJson'] },
+		},
+	},
+	{
+		displayName: 'Response Data',
+		name: 'responseData',
+		type: 'string',
+		noDataExpression: true,
+		default: '',
+		placeholder: 'e.g. success',
+		description: 'Custom response data to send instead of the default acknowledgement',
+		displayOptions: {
+			show: { '/responseMode': ['onReceived'] },
+			hide: { noResponseBody: [true] },
+		},
+	},
+	{
+		displayName: 'Response Headers',
+		name: 'responseHeaders',
+		type: 'fixedCollection',
+		noDataExpression: true,
+		placeholder: 'Add Response Header',
+		typeOptions: {
+			multipleValues: true,
+		},
+		default: {},
+		description: 'Headers to add to the response',
+		displayOptions: { hide: { '/responseMode': ['responseNode'] } },
+		options: [
+			{
+				name: 'entries',
+				displayName: 'Entries',
+				values: [
+					{
+						displayName: 'Name',
+						name: 'name',
+						type: 'string',
+						noDataExpression: true,
+						default: '',
+						placeholder: 'e.g. X-Request-ID',
+						description: 'Name of the header',
+					},
+					{
+						displayName: 'Value',
+						name: 'value',
+						type: 'string',
+						noDataExpression: true,
+						default: '',
+						description: 'Value of the header',
+					},
+				],
+			},
+		],
+	},
+	{
+		displayName: 'Response Property Name',
+		name: 'responsePropertyName',
+		type: 'string',
+		noDataExpression: true,
+		default: 'data',
+		description: 'Name of the property to return the data of instead of the whole JSON',
+		displayOptions: {
+			show: { '/responseMode': ['lastNode'], '/responseData': ['firstEntryJson'] },
+		},
+	},
+];

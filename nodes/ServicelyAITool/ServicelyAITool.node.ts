@@ -14,17 +14,17 @@ import {
 	authenticateRequest,
 	WebhookAuthorizationError,
 } from './authentication';
-import {
-	DEFAULT_EXECUTION_SCRIPT,
-	DEFAULT_RESPONSE_TIMEOUT_SECONDS,
-	readParameterDefinitions,
-	readResponseTimeoutSeconds,
-} from './parameters';
+import { DEFAULT_EXECUTION_SCRIPT, readParameterDefinitions } from './parameters';
 import { toolRegistrationMethods } from './registration';
+import {
+	checkResponseModeConfiguration,
+	responseDataProperty,
+	responseModeNotices,
+	responseModeProperty,
+	responseOptions,
+	responseWebhookFields,
+} from './response';
 import { isPlainObject, validateBody } from './validation';
-
-/** The still open HTTP response of the request that started the workflow. */
-type WebhookResponse = ReturnType<IWebhookFunctions['getResponseObject']>;
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
 
@@ -41,7 +41,8 @@ export class ServicelyAITool implements INodeType {
 		icon: { light: 'file:../../icons/servicely.svg', dark: 'file:../../icons/servicely.dark.svg' },
 		group: ['trigger'],
 		version: 1,
-		// The tool is named after the workflow, so the path is what identifies this node
+		// The tool is named after the node, so the canvas already says which tool this
+		// is; the subtitle says where it answers instead
 		subtitle: '={{"POST /" + $parameter["path"]}}',
 		description: 'Expose this workflow as a tool for the Servicely service desk agent',
 		documentationUrl: 'https://docs-servicely.atlassian.net/wiki/spaces/SD/pages/2077523978',
@@ -75,10 +76,9 @@ export class ServicelyAITool implements INodeType {
 				// Serve exactly the configured path instead of prefixing the internal webhook ID
 				isFullPath: true,
 				path: '={{$parameter["path"]}}',
-				responseMode: '={{$parameter["responseMode"]}}',
-				// "lastNode" answers with the first item of the last node. For the other modes this
-				// has to stay empty, otherwise n8n sends the response data type itself as the body.
-				responseData: '={{$parameter["responseMode"] === "lastNode" ? "firstEntryJson" : ""}}',
+				// How the call is answered, declared rather than written by this node —
+				// see `response.ts`
+				...responseWebhookFields,
 			},
 		],
 		// `noDataExpression` on every field, deliberately. This node defines a tool
@@ -189,64 +189,9 @@ export class ServicelyAITool implements INodeType {
 					},
 				],
 			},
-			{
-				displayName: 'Respond',
-				name: 'responseMode',
-				type: 'options',
-				noDataExpression: true,
-				options: [
-					{
-						name: 'Using Servicely AI Tool Response Node',
-						value: 'responseNode',
-						description:
-							'Respond from a Servicely AI Tool Response node further down the workflow',
-					},
-					{
-						name: 'Immediately',
-						value: 'onReceived',
-						description: 'Respond as soon as this node validated the request',
-					},
-					{
-						name: 'When Last Node Finishes',
-						value: 'lastNode',
-						description: 'Respond with the data of the last executed node',
-					},
-				],
-				default: 'responseNode',
-				description: 'When and how to respond to the calling agent',
-			},
-			// Both waiting modes bound the same value, but they wait for different things,
-			// so each states what it waits for. Two properties under one name is how a
-			// title can differ per mode: the displayOptions are disjoint, so only ever
-			// one of them is shown, and both read and write `responseTimeout`.
-			{
-				displayName: 'Response Node Timeout (Seconds)',
-				name: 'responseTimeout',
-				type: 'number',
-				noDataExpression: true,
-				typeOptions: {
-					minValue: 1,
-					maxValue: 3600,
-				},
-				default: DEFAULT_RESPONSE_TIMEOUT_SECONDS,
-				description:
-					'How long to wait for the Servicely AI Tool Response node. When it does not respond in time the caller gets a 504, while the workflow keeps running.',
-				displayOptions: { show: { responseMode: ['responseNode'] } },
-			},
-			{
-				displayName: 'Workflow Timeout (Seconds)',
-				name: 'responseTimeout',
-				type: 'number',
-				noDataExpression: true,
-				typeOptions: {
-					minValue: 1,
-					maxValue: 3600,
-				},
-				default: DEFAULT_RESPONSE_TIMEOUT_SECONDS,
-				description:
-					'How long to wait for the last node to finish. When the workflow does not finish in time the caller gets a 504, while the workflow keeps running.',
-				displayOptions: { show: { responseMode: ['lastNode'] } },
-			},
+			responseModeProperty,
+			...responseModeNotices,
+			responseDataProperty,
 			{
 				displayName: 'On Validation Error',
 				name: 'onValidationError',
@@ -332,6 +277,9 @@ export class ServicelyAITool implements INodeType {
 						description:
 							'Script the service desk runs when the agent calls this tool. Exported with it. Add this option only to replace the default script, which posts the call\'s parameters to this workflow and answers with what it returns. Every "@@URL@@" is replaced with this tool\'s webhook URL when the workflow is activated, so the script does not have to be edited when it moves between instances — quoted for you, unless you quoted the placeholder yourself.',
 					},
+					// Everything the answer to a call is made of, for the modes that leave
+					// it to n8n rather than to a response node
+					...responseOptions,
 				],
 			},
 		],
@@ -346,6 +294,10 @@ export class ServicelyAITool implements INodeType {
 	webhookMethods = toolRegistrationMethods;
 
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
+		// Before anything is let in: a Respond setting the workflow cannot honour is a
+		// call that would never be answered, and saying so beats hanging.
+		checkResponseModeConfiguration(this);
+
 		const onValidationError = this.getNodeParameter('onValidationError') as
 			| 'respondError'
 			| 'continue';
@@ -393,15 +345,6 @@ export class ServicelyAITool implements INodeType {
 			return { noWebhookResponse: true };
 		}
 
-		// Both waiting modes can leave the caller hanging: the response node answers
-		// whenever the workflow reaches it, which may be never, and the last node
-		// finishes whenever the workflow does. The timer bounds either wait. The
-		// "Immediately" mode has answered by the time this returns, so it needs none.
-		const responseMode = this.getNodeParameter('responseMode') as string;
-		if (responseMode === 'responseNode' || responseMode === 'lastNode') {
-			scheduleResponseTimeout(response, readResponseTimeoutSeconds(this));
-		}
-
 		const json: IDataObject = {
 			body,
 			parameters: result.parameters,
@@ -415,38 +358,13 @@ export class ServicelyAITool implements INodeType {
 		}
 
 		return {
-			// Only used by the "Immediately" response mode, the other modes answer later
+			// The body of the "Immediately" mode, and only when the node was not told
+			// something more specific: the Response Data option overrides it, and No
+			// Response Body drops it. The other modes answer from the workflow, so n8n
+			// ignores it there.
 			webhookResponse: { success: true, message: 'Workflow was started' },
 			workflowData: [[{ json }]],
 		};
 	}
-}
-
-/**
- * Answers the still open request with 504 when nothing responded within `seconds`.
- * The workflow itself is left running; only the caller stops waiting.
- */
-function scheduleResponseTimeout(response: WebhookResponse, seconds: number): void {
-	if (!Number.isFinite(seconds) || seconds <= 0) {
-		return;
-	}
-
-	const timer = setTimeout(() => {
-		if (response.headersSent || response.writableEnded) {
-			return;
-		}
-		response.writeHead(504, JSON_HEADERS);
-		response.end(
-			JSON.stringify({
-				success: false,
-				error: { message: `The workflow did not respond within ${seconds} seconds` },
-			}),
-		);
-	}, seconds * 1000);
-
-	// A pending timer must not hold the process open, and it is pointless once the
-	// response node (or a client disconnect) has closed the request.
-	timer.unref?.();
-	response.on('close', () => clearTimeout(timer));
 }
 

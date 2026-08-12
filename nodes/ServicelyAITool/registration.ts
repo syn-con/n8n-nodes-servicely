@@ -7,30 +7,36 @@ import {
 	toRecordList,
 } from '../Servicely/GenericFunctions';
 import type { ServicelyRecord } from '../Servicely/types';
+import { toolDescription, toolKey, toolName } from './identity';
 import {
 	DEFAULT_EXECUTION_SCRIPT,
 	DEFAULT_RESPONSE_TIMEOUT_SECONDS,
 	readParameterDefinitions,
-	readResponseTimeoutSeconds,
 } from './parameters';
 import type { ParameterDefinition } from './validation';
 
 /**
- * Registration of the workflow as a tool the Servicely service desk can select,
+ * Registration of the node as a tool the Servicely service desk can select,
  * driven by n8n's webhook lifecycle: `checkExists` and `create` run when the
  * workflow is activated, `delete` when it is deactivated.
  *
- * The record is found by its `Key`, which holds the n8n workflow id — so a
- * workflow owns at most one tool record, and every hook resolves it the same way.
- * `create` upserts against that Key, which keeps activation idempotent: a second
- * AI Tool node in the same workflow, or a record left behind by a deactivation
- * that could not reach the instance, updates it instead of failing on it.
+ * The record is found by its `Key`, which holds the n8n *node* id — so each AI
+ * Tool node owns exactly one tool record, and a workflow that declares several
+ * tools registers one per node. Every hook resolves it the same way. `create`
+ * upserts against that Key, which keeps activation idempotent: a record left
+ * behind by a deactivation that could not reach the instance is updated rather
+ * than failed on.
+ *
+ * The node id is n8n's own and survives everything a workflow can do to a node
+ * except deleting it — renaming it, moving it, editing its parameters — so a
+ * tool keeps its registration, and its links to agents and assistants, across
+ * all of those.
  */
 
 /** Table holding the tools an AI agent can select. */
 const TOOL_TABLE = 'SystemAITool';
 
-/** Field the n8n workflow id is stored under, and how a tool is found again. */
+/** Field the n8n node id is stored under, and how a tool is found again. */
 const TOOL_KEY_FIELD = 'Key';
 
 /** Table holding one row per argument of a tool. */
@@ -61,9 +67,6 @@ const TOOL_HOLDERS = [
 ] as const;
 
 type ToolHolder = (typeof TOOL_HOLDERS)[number];
-
-/** Marks a tool record as maintained by n8n rather than edited in the service desk. */
-const NAME_PREFIX = '[n8n]';
 
 /** Stands in for this tool's webhook URL inside the Execution Script. */
 const URL_PLACEHOLDER = '@@URL@@';
@@ -101,17 +104,6 @@ function isTestRegistration(ctx: IHookFunctions): boolean {
 		return true;
 	}
 	return ctx.getNodeWebhookUrl(WEBHOOK_NAME)?.includes(TEST_URL_SEGMENT) ?? false;
-}
-
-/** The workflow id, which is the tool's Key. Absent only for a workflow never saved. */
-function toolKey(ctx: IHookFunctions): string {
-	const { id } = ctx.getWorkflow();
-	if (!id) {
-		throw new NodeOperationError(ctx.getNode(), 'The workflow has no id yet', {
-			description: 'Save the workflow before activating it, so the tool can be registered.',
-		});
-	}
-	return String(id);
 }
 
 /**
@@ -193,17 +185,7 @@ function missingTableError(ctx: IHookFunctions, table: string): NodeOperationErr
 	);
 }
 
-/**
- * The tool's `TimeoutSeconds`. The node's own value, unless an expression left it
- * unusable — the field has to be a number, and the node's default is the honest
- * answer for how long it waits then.
- */
-function timeoutSeconds(ctx: IHookFunctions): number {
-	const seconds = readResponseTimeoutSeconds(ctx);
-	return Number.isFinite(seconds) && seconds > 0 ? seconds : DEFAULT_RESPONSE_TIMEOUT_SECONDS;
-}
-
-/** The tool record carrying this workflow's Key, if the instance already has one. */
+/** The tool record carrying this node's Key, if the instance already has one. */
 async function findTool(ctx: IHookFunctions, key: string): Promise<ServicelyRecord | undefined> {
 	let payload: unknown;
 	try {
@@ -225,8 +207,8 @@ async function findTool(ctx: IHookFunctions, key: string): Promise<ServicelyReco
 }
 
 /**
- * Whether the instance already knows this workflow as a tool. A `true` tells n8n
- * to skip `create`. The Key is the only identity the hooks rely on, so nothing has
+ * Whether the instance already knows this node as a tool. A `true` tells n8n to
+ * skip `create`. The Key is the only identity the hooks rely on, so nothing has
  * to be remembered between them — a restart or a lost workflow cache changes
  * nothing about what this answers.
  */
@@ -547,7 +529,7 @@ function syncAllHolderLinks(
 }
 
 /**
- * Registers the workflow as an active tool, or brings an existing registration up
+ * Registers this node as an active tool, or brings an existing registration up
  * to date, then mirrors the node's declared parameters into the tool's parameter
  * rows. The record is looked up by its Key first, so this is an upsert: a second
  * run neither fails on a duplicate Key nor leaves a stale Prompt behind.
@@ -556,20 +538,22 @@ function syncAllHolderLinks(
  * has no business rewriting it.
  */
 export async function createTool(this: IHookFunctions): Promise<boolean> {
-	this.logger.debug('Registering the Servicely AI Tool for this workflow');
+	this.logger.debug('Registering the Servicely AI Tool for this node');
 	const key = toolKey(this);
-	const workflowName = this.getWorkflow().name ?? key;
 
 	const fields: IDataObject = {
-		Name: `${NAME_PREFIX} ${workflowName}`,
+		// Always sent, so renaming the node renames the tool on the next activation
+		Name: toolName(this),
 		Active: true,
 		SelectionPrompt: String(this.getNodeParameter('prompt', '') ?? ''),
-		Description: `Created by the n8n workflow "${workflowName}"`,
+		Description: toolDescription(this),
 		// Always sent, so clearing the field in n8n clears it on the record too
 		ExecutionScript: executionScript(this),
-		// Sent on every registration, so the caller's patience follows the node's:
-		// a value the node cannot use is one the service desk should not be given.
-		TimeoutSeconds: timeoutSeconds(this),
+		// How long the service desk waits for a call to be answered. n8n holds the
+		// request open for as long as the workflow runs — the Webhook node this one
+		// follows sets no deadline of its own — so there is nothing node-side to
+		// mirror here, only the patience the service desk needs to be given.
+		TimeoutSeconds: DEFAULT_RESPONSE_TIMEOUT_SECONDS,
 	};
 
 	const existing = await findTool(this, key);
@@ -634,12 +618,12 @@ export async function deleteTool(this: IHookFunctions): Promise<boolean> {
 	}
 
 	try {
-		this.logger.debug('Removing the Servicely AI Tool for this workflow');
+		this.logger.debug('Removing the Servicely AI Tool for this node');
 		// Resolved by Key on every call, so the record is found however long the
 		// workflow was active and whatever happened to it in the meantime.
 		const existing = await findTool(this, toolKey(this));
 		if (existing === undefined) {
-			this.logger.warn('No Servicely AI Tool is registered for this workflow');
+			this.logger.warn('No Servicely AI Tool is registered for this node');
 			return true;
 		}
 

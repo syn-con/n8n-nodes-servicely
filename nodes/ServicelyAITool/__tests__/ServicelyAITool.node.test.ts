@@ -1,11 +1,14 @@
 import { createHmac } from 'crypto';
 import type { IDataObject, INodeProperties, IWebhookFunctions } from 'n8n-workflow';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { getAiAgents } from '../../Servicely/SearchFunctions';
 import { ServicelyAITool } from '../ServicelyAITool.node';
 
 const node = new ServicelyAITool();
+
+/** The response node, as n8n types it once the package is installed. */
+const RESPONSE_NODE_TYPE = '@syn-con/n8n-nodes-servicely.servicelyAiToolResponse';
 
 interface WebhookStubOptions {
 	params?: IDataObject;
@@ -13,6 +16,8 @@ interface WebhookStubOptions {
 	/** Attached Servicely AI Tool Auth credential; absent leaves the endpoint open. */
 	credential?: IDataObject;
 	headers?: Record<string, string>;
+	/** Types of the nodes downstream of the trigger, which decide the Respond wiring. */
+	children?: string[];
 }
 
 /** Minimal stand-in for the still open express response. */
@@ -72,6 +77,8 @@ function makeWebhookCtx(options: WebhookStubOptions = {}) {
 		getParamsData: () => ({}),
 		getRequestObject: () => ({ headers: options.headers ?? {} }),
 		getCredentials: async () => options.credential,
+		getChildNodes: () =>
+			(options.children ?? []).map((type, index) => ({ name: `node ${index}`, type })),
 		getNode: () => ({
 			name: 'Servicely AI Tool',
 			// Without an attached credential the endpoint takes any caller
@@ -172,19 +179,18 @@ describe('node description', () => {
 		expect(types).toEqual(['boolean', 'integer', 'number', 'string']);
 	});
 
-	it('titles the timeout after whatever the mode waits for, and shows it in both', () => {
-		const timeouts = node.description.properties.filter(
-			(entry) => entry.name === 'responseTimeout',
-		);
+	// The response is n8n's to send, exactly as for its own Webhook node: the
+	// description says how, and the node never writes it.
+	it('declares how a call is answered on its webhook', () => {
+		const [webhookDescription] = node.description.webhooks ?? [];
 
-		expect(
-			timeouts.map((entry) => [entry.displayName, entry.displayOptions?.show?.responseMode]),
-		).toEqual([
-			['Response Node Timeout (Seconds)', ['responseNode']],
-			['Workflow Timeout (Seconds)', ['lastNode']],
-		]);
-		// One name, so both variants read and write the same value
-		expect(timeouts.map((entry) => entry.default)).toEqual([60, 60]);
+		expect(webhookDescription.responseMode).toBe('={{$parameter["responseMode"]}}');
+		expect(webhookDescription.responseCode).toContain('$parameter');
+		expect(webhookDescription.responseData).toContain('$parameter');
+		expect(property('responseMode').default).toBe('responseNode');
+		expect(node.description.properties.some((entry) => entry.name === 'responseTimeout')).toBe(
+			false,
+		);
 	});
 
 	// The node has no input and is read on activation, so there is neither a `$json`
@@ -400,61 +406,44 @@ describe('validation', () => {
 	});
 });
 
-describe('response timeout', () => {
-	beforeEach(() => {
-		vi.useFakeTimers();
-	});
-
-	afterEach(() => {
-		vi.useRealTimers();
-	});
-
-	it('answers 504 when the response node does not respond in time', async () => {
-		const { response } = await webhook({
-			params: { responseMode: 'responseNode', responseTimeout: 30 },
-		});
+describe('response mode', () => {
+	// n8n's own webhook layer sends the response for every mode; this node only
+	// declares how, and hands it the body the immediate mode falls back to.
+	it('leaves the request open and offers the default acknowledgement', async () => {
+		const { result, response } = await webhook({ params: { responseMode: 'onReceived' } });
 
 		expect(response.headersSent).toBe(false);
-		vi.advanceTimersByTime(30_000);
-
-		expect(response.status).toBe(504);
-		expect(JSON.parse(response.payload as string)).toEqual({
-			success: false,
-			error: { message: 'The workflow did not respond within 30 seconds' },
-		});
+		expect(result.webhookResponse).toEqual({ success: true, message: 'Workflow was started' });
+		expect(result.noWebhookResponse).toBeUndefined();
 	});
 
-	it('stays quiet when the response node already answered', async () => {
-		const { response } = await webhook({
-			params: { responseMode: 'responseNode', responseTimeout: 30 },
-		});
+	it('does not answer the waiting modes itself either', async () => {
+		for (const responseMode of ['lastNode', 'responseNode']) {
+			const children = responseMode === 'responseNode' ? [RESPONSE_NODE_TYPE] : [];
+			const { response } = await webhook({ params: { responseMode }, children });
 
-		// What n8n does when the response node sends its response
-		response.writeHead(200, {});
-		response.end('{}');
-		response.close();
-		vi.advanceTimersByTime(60_000);
-
-		expect(response.status).toBe(200);
-		expect(response.payload).toBe('{}');
+			expect(response.headersSent).toBe(false);
+		}
 	});
 
-	it('answers 504 when the workflow itself does not finish in time', async () => {
-		const { response } = await webhook({
-			params: { responseMode: 'lastNode', responseTimeout: 30 },
-		});
+	it('refuses a call the workflow could not answer', async () => {
+		await expect(webhook({ params: { responseMode: 'responseNode' } })).rejects.toThrow(
+			'No Servicely AI Tool Response node found in the workflow',
+		);
 
-		vi.advanceTimersByTime(30_000);
-
-		expect(response.status).toBe(504);
+		await expect(
+			webhook({ params: { responseMode: 'lastNode' }, children: [RESPONSE_NODE_TYPE] }),
+		).rejects.toThrow('Unused Servicely AI Tool Response node found in the workflow');
 	});
 
-	// "Immediately" has already answered by the time the webhook returns.
-	it('does not arm a timer when the response is immediate', async () => {
-		const { response } = await webhook({ params: { responseMode: 'onReceived' } });
-
-		vi.advanceTimersByTime(3_600_000);
-
-		expect(response.headersSent).toBe(false);
+	// Checked before anything is read from the request, so a workflow that cannot
+	// answer says so rather than authenticating a caller it will not reply to.
+	it('checks the wiring before authenticating the caller', async () => {
+		await expect(
+			webhook({
+				params: { responseMode: 'responseNode' },
+				credential: { type: 'headerAuth', headerName: 'X-API-KEY', headerValue: 'expected' },
+			}),
+		).rejects.toThrow('No Servicely AI Tool Response node found in the workflow');
 	});
 });
