@@ -14,7 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the release tag
-      packages: write # publish to GitHub Packages
+      # Mints the OIDC token `npm publish --provenance` signs the package with.
+      # n8n requires a provenance statement on every community node published
+      # from 1 May 2026, and provenance can only be attested by a CI publish.
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,7 +29,9 @@ jobs:
           # a native module that compiles against V8 12.4+ APIs (Node 22 and up).
           node-version: 22
           cache: npm
-          registry-url: "https://npm.pkg.github.com"
+          # The public registry: n8n installs a community node from npm, and a
+          # package that is not there cannot be verified or offered on Cloud.
+          registry-url: "https://registry.npmjs.org"
 
       - name: Read package info
         id: pkg
@@ -37,7 +42,7 @@ jobs:
       - name: Determine publish state
         id: check
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           NAME="${{ steps.pkg.outputs.name }}"
           VERSION="${{ steps.pkg.outputs.version }}"
@@ -74,6 +79,15 @@ jobs:
         if: steps.check.outputs.publish == 'true'
         run: npm ci
 
+      # The gate n8n's verification applies to the published package, applied
+      # before it is published: `npm run lint` runs n8n's own node standards.
+      - name: Check
+        if: steps.check.outputs.publish == 'true'
+        run: |
+          npm run lint
+          npm run typecheck
+          npm test
+
       - name: Build
         if: steps.check.outputs.publish == 'true'
         run: npm run build
@@ -81,8 +95,16 @@ jobs:
       - name: Publish
         if: steps.check.outputs.publish == 'true'
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm publish
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
+
+      # n8n's own scanner, against the version that was just published. It needs
+      # a package on the registry, so it cannot gate the publish — it reports on
+      # it, and a failure here is what to fix before submitting for verification.
+      - name: Scan the published package
+        if: steps.check.outputs.publish == 'true'
+        continue-on-error: true
+        run: npx --yes @n8n/scan-community-package "${{ steps.pkg.outputs.name }}"
 
       - name: Tag the release
         if: steps.check.outputs.publish == 'true'

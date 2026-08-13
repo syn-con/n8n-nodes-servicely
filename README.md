@@ -195,10 +195,10 @@ The tool is exported under the **node's** name (as `[n8n] <node name>`), so the 
 - **Tool Timeout (Seconds)** — how long the *service desk* waits for this tool to answer before giving up on the call, exported with the tool as `TimeoutSeconds`. Default 60, and shown under the two modes that make the agent wait; *Immediately* has already answered, so it does not ask. It is the only deadline in play: n8n keeps the request open for as long as the workflow runs, so this bounds the agent's wait, not the workflow's — a workflow that overruns it keeps going, it just answers into a call nobody is waiting for any more.
 - **The Respond setting and the wiring have to agree**, and a call that would go unanswered is refused with a `500` rather than left hanging: *Using Servicely AI Agent Tool Response Node* with no response node downstream fails with "No Servicely AI Agent Tool Response node found in the workflow", and a response node under either other mode fails with "Unused …" — n8n has already replied by the time that node runs, so its answer would go nowhere. The check runs before the caller is even authenticated.
 - **On Validation Error** — respond `400` with the errors (default), or run the workflow anyway and pass them on in `json.validation`.
-- **Options → Allow Unknown Parameters** (default on), **Coerce Types** (default off, converts e.g. the string `"12"` to `12` before validating), **AI Agents**, **AI Assistants**, **Roles**, **Mutates Ticket**, **Production Restricted**, and **Execution Script**.
+- **Options → Allow Unknown Parameters** (default on), **Coerce Types** (default off, converts e.g. the string `"12"` to `12` before validating), **AI Agent Names or IDs**, **AI Assistant Names or IDs**, **Role Names or IDs**, **Mutates Ticket**, **Production Restricted**, and **Execution Script**.
 - **Options → the response ones** — **Response Code** (default 200), **Response Headers**, **Response Data** (a fixed body for *Immediately*), **No Response Body**, and, for *When Last Node Finishes* returning First Entry JSON, **Response Content-Type** and **Response Property Name** (answer with one property of the item instead of the whole JSON). Each shows only under the modes it applies to, and none appears under *Using Servicely AI Agent Tool Response Node* — that node carries its own status, body and headers.
-- **Options → AI Agents** / **AI Assistants** — who the tool is exported to: multi-selects loaded from the instance's `SystemAIAgent` and `SystemAIAssistant` tables, each entry labelled by its **Name** and stored by its record id. Reading them needs the **Servicely API** credential; a table that cannot be answered for leaves that list empty, which is also how an instance without one reads. Activating the workflow links the tool to exactly what each selects (see below). The two are independent — selecting agents does not touch the assistants — and an option you never add is left alone entirely: that table is not even read, since a workflow that says nothing about assistants is not asking for its tool to be taken out of them. Adding an option and then emptying it *is* a statement, and unlinks the tool from everything in that table.
-- **Options → Roles** — the roles the tool is given: a multi-select loaded from the instance's `Role` table, each entry labelled by its **Name** and stored by its record id, written to the tool's own `Roles` array. Unlike the agents and assistants, this is a plain field of the tool record rather than a link held by the other side, so there is nothing to reconcile — the selection is written as it stands.
+- **Options → AI Agent Names or IDs** / **AI Assistant Names or IDs** — who the tool is exported to: multi-selects loaded from the instance's `SystemAIAgent` and `SystemAIAssistant` tables, each entry labelled by its **Name** and stored by its record id. Reading them needs the **Servicely API** credential; a table that cannot be answered for leaves that list empty, which is also how an instance without one reads. Activating the workflow links the tool to exactly what each selects (see below). The two are independent — selecting agents does not touch the assistants — and an option you never add is left alone entirely: that table is not even read, since a workflow that says nothing about assistants is not asking for its tool to be taken out of them. Adding an option and then emptying it *is* a statement, and unlinks the tool from everything in that table.
+- **Options → Role Names or IDs** — the roles the tool is given: a multi-select loaded from the instance's `Role` table, each entry labelled by its **Name** and stored by its record id, written to the tool's own `Roles` array. Unlike the agents and assistants, this is a plain field of the tool record rather than a link held by the other side, so there is nothing to reconcile — the selection is written as it stands.
 - **Options → Mutates Ticket** — whether calling the tool changes something. Turn it on for tools that create, update or delete records, send messages, trigger external automations, or otherwise cause side effects.
 - **Options → Production Restricted** — whether the tool is kept out of production environments. When on, it cannot be selected, executed or modified on a production system — for keeping an AI from, say, changing the schema of a live instance.
 
@@ -269,7 +269,7 @@ Added from the **Actions** half of the card; it is called *Servicely AI Agent To
 
 **Expose a workflow as an agent tool**
 
-1. **Servicely AI Agent Tool**, renamed on the canvas to *Create Incident* (the tool registers as `[n8n] Create Incident`), Prompt "Creates an incident for a user and returns its number", Path `create-incident`, AI Agents = the service desk agent.
+1. **Servicely AI Agent Tool**, renamed on the canvas to *Create Incident* (the tool registers as `[n8n] Create Incident`), Prompt "Creates an incident for a user and returns its number", Path `create-incident`, AI Agent Names or IDs = the service desk agent.
 2. *Parameters:* `shortDescription` (String, required, "What is wrong"), `priority` (Integer, **Param Required** off, "1 highest to 4 lowest — omit for the default").
 3. *Options:* **Mutates Ticket** on, since the call creates a record.
 4. **Servicely → Object → Create**, Table `Incident`, fields taken from `={{ $json.parameters.shortDescription }}` and `={{ $json.parameters.priority }}` — the second is absent when the agent omits it, so give it a default downstream.
@@ -292,12 +292,18 @@ npm run build       # tsc → dist/ (+ copies the node icon)
 npm run build:watch # tsc --watch (recompile on change)
 npm run dev         # build + link into ~/.n8n/custom + start n8n
 npm run typecheck   # tsc --noEmit
-npm run lint        # eslint
+npm run lint        # eslint, including n8n's own node standards
 npm test            # vitest run
 npm run test:coverage
 ```
 
 Tests stub `helpers.httpRequestWithAuthentication` rather than hitting a live instance, so the suite runs offline. Coverage is enforced at ≥80% per file (statements, branches, functions, lines).
+
+`npm run lint` runs n8n's own node standards (`eslint-plugin-n8n-nodes-base`, the presets a community node is measured against) alongside the package's rules, so the check a submission faces is the check that runs here. Two rules are turned off in `eslint.config.mjs`, each with its reason: both expect the docs *slug* a credential in n8n's own repository uses, where this package holds the URL that actually helps a reader.
+
+### Publishing
+
+`.github/workflows/publish.yml` publishes to npm on a version change in `package.json`, from CI only — n8n requires every community node to be published by a GitHub action carrying a [provenance](https://docs.npmjs.com/generating-provenance-statements) statement, which a local `npm publish` cannot produce. The job lints, typechecks and tests before it publishes, then runs n8n's `@n8n/scan-community-package` against the published version. It needs one repository secret, `NPM_TOKEN` (an npm automation token with publish rights on the `@syn-con` scope).
 
 ### Architecture
 
