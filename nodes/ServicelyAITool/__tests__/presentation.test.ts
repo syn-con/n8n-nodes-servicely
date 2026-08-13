@@ -4,8 +4,6 @@ import { describe, expect, it } from 'vitest';
 import {
 	AUTH_DISPLAY_NAME,
 	DOCUMENTATION_URL,
-	LEGACY_TOOL_NODE_TYPE,
-	LEGACY_TRIGGER_NODE_TYPE,
 	RESPONSE_DISPLAY_NAME,
 	SEND_RESPONSE_ACTION,
 	TOOL_CODEX,
@@ -15,14 +13,10 @@ import {
 	TRIGGER_NODE_TYPE,
 } from '../presentation';
 import { ServicelyAITool } from '../ServicelyAITool.node';
-import { ServicelyAIToolLegacyResponse } from '../ServicelyAIToolLegacyResponse.node';
-import { ServicelyAIToolLegacyTrigger } from '../ServicelyAIToolLegacyTrigger.node';
 import { ServicelyAIToolTrigger } from '../ServicelyAIToolTrigger.node';
 
 const tool = new ServicelyAITool().description;
 const trigger = new ServicelyAIToolTrigger().description;
-const legacyTool = new ServicelyAIToolLegacyResponse().description;
-const legacyTrigger = new ServicelyAIToolLegacyTrigger().description;
 
 /**
  * What n8n's node creator does to decide whether a trigger belongs to an app's
@@ -101,49 +95,5 @@ describe('the one card the editor shows', () => {
 
 	it('names the credential after the tool', () => {
 		expect(AUTH_DISPLAY_NAME).toBe('Servicely AI Agent Tool Auth');
-	});
-});
-
-describe('the types published before the merge', () => {
-	// A saved workflow refers to a node by its type, so both old types stay loadable
-	it('are still registered, hidden, under their own names', () => {
-		expect(legacyTrigger.name).toBe(LEGACY_TRIGGER_NODE_TYPE);
-		expect(legacyTool.name).toBe(LEGACY_TOOL_NODE_TYPE);
-		expect(legacyTrigger.hidden).toBe(true);
-		expect(legacyTool.hidden).toBe(true);
-		// Not the current types, which is what the workflows being migrated to use
-		expect([legacyTrigger.name, legacyTool.name]).not.toContain(TOOL_NODE_TYPE);
-		expect([legacyTrigger.name, legacyTool.name]).not.toContain(TRIGGER_NODE_TYPE);
-	});
-
-	// The same webhook, the same fields, and the same code — a second name, not a
-	// second implementation. (`toStrictEqual`, not `toBe`: each node builds its own
-	// description object, so only the methods are shared by reference.)
-	it('behave exactly as the nodes they stand in for', () => {
-		expect(legacyTrigger.webhooks).toStrictEqual(trigger.webhooks);
-		expect(legacyTrigger.properties).toStrictEqual(trigger.properties);
-		expect(legacyTrigger.credentials).toStrictEqual(trigger.credentials);
-		expect(new ServicelyAIToolLegacyTrigger().webhook).toBe(new ServicelyAIToolTrigger().webhook);
-		expect(new ServicelyAIToolLegacyTrigger().webhookMethods).toBe(
-			new ServicelyAIToolTrigger().webhookMethods,
-		);
-		expect(new ServicelyAIToolLegacyTrigger().methods).toStrictEqual(
-			new ServicelyAIToolTrigger().methods,
-		);
-		expect(new ServicelyAIToolLegacyResponse().execute).toBe(new ServicelyAITool().execute);
-	});
-
-	// It exists to make the editor list an action, and a hidden node has none
-	it('leaves the operation selector off the old response node', () => {
-		expect(actions(legacyTool.properties)).toEqual([]);
-		expect(legacyTool.properties).toEqual(
-			tool.properties.filter((property) => property.name !== 'operation'),
-		);
-	});
-
-	// The old trigger keeps its own name on the canvas, so a workflow that was
-	// migrated does not suddenly register its tool under a different name.
-	it('keeps registering under the same tool name', () => {
-		expect(legacyTrigger.defaults.name).toBe(TOOL_DISPLAY_NAME);
 	});
 });

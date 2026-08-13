@@ -29,14 +29,6 @@ export const TOOL_NODE_TYPE = 'servicelyAiAgentTool';
 /** The trigger's node type. The suffix is what merges the two in the panel. */
 export const TRIGGER_NODE_TYPE = `${TOOL_NODE_TYPE}Trigger`;
 
-/**
- * The types this pair was published under before it was one card, kept alive by
- * the hidden nodes next to each of them so a saved workflow still loads and runs.
- * New workflows never get these: the editor does not offer a hidden node.
- */
-export const LEGACY_TRIGGER_NODE_TYPE = 'servicelyAiTool';
-export const LEGACY_TOOL_NODE_TYPE = 'servicelyAiToolResponse';
-
 /** The card's name, and the responder's, since the card takes the app's name. */
 export const TOOL_DISPLAY_NAME = 'Servicely AI Agent Tool';
 

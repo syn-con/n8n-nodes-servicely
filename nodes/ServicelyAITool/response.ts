@@ -5,7 +5,7 @@ import {
 } from 'n8n-workflow';
 
 import { DEFAULT_RESPONSE_TIMEOUT_SECONDS } from './parameters';
-import { LEGACY_TOOL_NODE_TYPE, TOOL_NODE_TYPE } from './presentation';
+import { TOOL_NODE_TYPE } from './presentation';
 
 /**
  * How the AI Tool answers a call, modelled on n8n's own Webhook node
@@ -79,18 +79,14 @@ export const getResponseData = (parameters: ResponseParameters) => {
 };
 
 /**
- * The types a node answering a tool call can have: the current one, and the one
- * the responder was published under before the pair became a single card, which a
- * saved workflow still holds.
+ * Whether a node type is the one that answers a tool call.
  *
  * n8n prefixes a community node's type with the package it came from, and a
  * package can be installed under more than one name over a node's life, so the
  * suffix is what identifies it.
  */
-const RESPONSE_NODE_TYPES = [TOOL_NODE_TYPE, LEGACY_TOOL_NODE_TYPE];
-
 function isResponseNode(type: string): boolean {
-	return RESPONSE_NODE_TYPES.some((name) => type === name || type.endsWith(`.${name}`));
+	return type === TOOL_NODE_TYPE || type.endsWith(`.${TOOL_NODE_TYPE}`);
 }
 
 /**

@@ -11,6 +11,4 @@ export { Servicely } from './nodes/Servicely/Servicely.node';
 export { ServicelyTrigger } from './nodes/Servicely/ServicelyTrigger.node';
 export { ServicelyAITool } from './nodes/ServicelyAITool/ServicelyAITool.node';
 export { ServicelyAIToolTrigger } from './nodes/ServicelyAITool/ServicelyAIToolTrigger.node';
-export { ServicelyAIToolLegacyResponse } from './nodes/ServicelyAITool/ServicelyAIToolLegacyResponse.node';
-export { ServicelyAIToolLegacyTrigger } from './nodes/ServicelyAITool/ServicelyAIToolLegacyTrigger.node';
 export * from './nodes/Servicely/types';

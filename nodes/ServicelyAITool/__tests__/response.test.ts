@@ -14,23 +14,20 @@ import {
 
 /**
  * The node types a response node can arrive as: the package prefix n8n gives a
- * community node, an installation under another package name, the bare name a
- * test fixture uses — and the type the node was published under before the pair
- * became one card, which a saved workflow still holds.
+ * community node, an installation under another package name, and the bare name a
+ * test fixture uses.
  */
 const RESPONSE_NODE_TYPES = [
 	'@syn-con/n8n-nodes-servicely.servicelyAiAgentTool',
 	'CUSTOM.servicelyAiAgentTool',
 	'servicelyAiAgentTool',
-	'@syn-con/n8n-nodes-servicely.servicelyAiToolResponse',
-	'servicelyAiToolResponse',
 ];
 
 function makeContext(responseMode: string, childTypes: string[]) {
 	return {
 		getNodeParameter: (name: string, fallback?: unknown) =>
 			name === 'responseMode' ? responseMode : fallback,
-		getNode: () => ({ name: 'Servicely AI Agent Tool', type: 'servicelyAiTool' }),
+		getNode: () => ({ name: 'Servicely AI Agent Tool', type: 'servicelyAiAgentToolTrigger' }),
 		getChildNodes: () => childTypes.map((type, index) => ({ name: `n${index}`, type })),
 	} as unknown as IWebhookFunctions;
 }
@@ -206,7 +203,6 @@ describe('checkResponseModeConfiguration', () => {
 		for (const type of [
 			'@syn-con/n8n-nodes-servicely.servicelyAiAgentToolTrigger',
 			'servicelyAiAgentToolTrigger',
-			'@syn-con/n8n-nodes-servicely.servicelyAiTool',
 		]) {
 			expect(() => checkResponseModeConfiguration(makeContext('responseNode', [type]))).toThrow(
 				'No Servicely AI Agent Tool Response node found',
