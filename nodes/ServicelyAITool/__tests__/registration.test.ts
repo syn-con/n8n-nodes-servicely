@@ -237,6 +237,75 @@ describe('create', () => {
 		});
 	});
 
+	// The roles are the tool's own field, not a link held by the roles, so they are
+	// written with the record rather than reconciled like the agents and assistants.
+	it('sends the selected roles as the tool\'s Roles', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
+			params: { options: { roles: ['role-1', 'role-2'] } },
+		});
+
+		await createTool.call(ctx);
+
+		expect(ctx.calls[1].body).toMatchObject({ Roles: ['role-1', 'role-2'] });
+	});
+
+	it('empties the roles when the option is there with nothing selected', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
+			params: { options: { roles: [] } },
+		});
+
+		await createTool.call(ctx);
+
+		expect(ctx.calls[1].body).toMatchObject({ Roles: [] });
+	});
+
+	// Saying nothing about roles is not asking for the ones a service desk set to go.
+	it('leaves the roles out entirely when the option was never added', async () => {
+		const ctx = makeHookCtx({ responses: [ok([TOOL]), ok({ id: 'tool-9' })] });
+
+		await createTool.call(ctx);
+
+		expect(ctx.calls[1].body).not.toHaveProperty('Roles');
+	});
+
+	it('sends the tool flags the node sets, on and off', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
+			params: { options: { mutatesTicket: true, productionRestricted: false } },
+		});
+
+		await createTool.call(ctx);
+
+		expect(ctx.calls[1].body).toMatchObject({
+			MutatesTicket: true,
+			ProductionRestricted: false,
+		});
+	});
+
+	// Same reasoning as the roles: what the node never mentions, it does not rewrite.
+	it('leaves both flags out when neither option was added', async () => {
+		const ctx = makeHookCtx({ responses: [ok([TOOL]), ok({ id: 'tool-9' })] });
+
+		await createTool.call(ctx);
+
+		expect(ctx.calls[1].body).not.toHaveProperty('MutatesTicket');
+		expect(ctx.calls[1].body).not.toHaveProperty('ProductionRestricted');
+	});
+
+	it('sends one flag without the other', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
+			params: { options: { productionRestricted: true } },
+		});
+
+		await createTool.call(ctx);
+
+		expect(ctx.calls[1].body).toMatchObject({ ProductionRestricted: true });
+		expect(ctx.calls[1].body).not.toHaveProperty('MutatesTicket');
+	});
+
 	// A tool with no script would be registered and then do nothing, so the default
 	// is what a node that says nothing gets.
 	it('falls back to the default Execution Script, with its URL resolved', async () => {

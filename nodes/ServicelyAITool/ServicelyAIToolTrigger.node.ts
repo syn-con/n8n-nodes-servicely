@@ -7,7 +7,7 @@ import {
 	NodeConnectionTypes,
 } from 'n8n-workflow';
 
-import { getAiAgents, getAiAssistants } from '../Servicely/SearchFunctions';
+import { getAiAgents, getAiAssistants, getRoles } from '../Servicely/SearchFunctions';
 import {
 	type AuthenticationResult,
 	AUTH_CREDENTIAL_NAME,
@@ -304,6 +304,36 @@ export class ServicelyAIToolTrigger implements INodeType {
 						description:
 							'Script the service desk runs when the agent calls this tool. Exported with it. Add this option only to replace the default script, which posts the call\'s parameters to this workflow and answers with what it returns. Every "@@URL@@" is replaced with this tool\'s webhook URL when the workflow is activated, so the script does not have to be edited when it moves between instances — quoted for you, unless you quoted the placeholder yourself.',
 					},
+					{
+						displayName: 'Mutates Ticket',
+						name: 'mutatesTicket',
+						type: 'boolean',
+						noDataExpression: true,
+						default: false,
+						description:
+							'Whether calling this tool changes something. Turn it on for tools that create, update or delete records, send messages, trigger external automations, or otherwise cause side effects. Exported with the tool; leave the option out and the service desk keeps whatever the tool already says.',
+					},
+					{
+						displayName: 'Production Restricted',
+						name: 'productionRestricted',
+						type: 'boolean',
+						noDataExpression: true,
+						default: false,
+						description:
+							'Whether the tool is kept out of production environments. When on, it cannot be selected, executed or modified on a production system — for keeping an AI from, say, changing the schema of a live instance. Exported with the tool; leave the option out and the service desk keeps whatever the tool already says.',
+					},
+					{
+						displayName: 'Roles',
+						name: 'roles',
+						type: 'multiOptions',
+						noDataExpression: true,
+						typeOptions: {
+							loadOptionsMethod: 'getRoles',
+						},
+						default: [],
+						description:
+							"The Servicely roles this tool is given. The list shows Role records by Name; each role is stored by its record ID, in the tool's own Roles. Activating the workflow writes the selection as it stands — so adding this option and selecting nothing empties the tool's roles, while leaving the option out keeps whatever the service desk holds.",
+					},
 					// Everything the answer to a call is made of, for the modes that leave
 					// it to n8n rather than to a response node
 					...responseOptions,
@@ -314,8 +344,8 @@ export class ServicelyAIToolTrigger implements INodeType {
 
 
 
-	/** Only the two AI registries: the pickers of the Servicely node have no counterpart here. */
-	methods = { loadOptions: { getAiAgents, getAiAssistants } };
+	/** Only the registries this node selects from: the pickers of the Servicely node have no counterpart here. */
+	methods = { loadOptions: { getAiAgents, getAiAssistants, getRoles } };
 
 	/** Registers the tool in the service desk on activation, removes it on deactivation. */
 	webhookMethods = toolRegistrationMethods;

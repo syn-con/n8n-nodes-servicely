@@ -2,7 +2,7 @@ import { createHmac } from 'crypto';
 import type { IDataObject, INodeProperties, IWebhookFunctions } from 'n8n-workflow';
 import { describe, expect, it } from 'vitest';
 
-import { getAiAgents } from '../../Servicely/SearchFunctions';
+import { getAiAgents, getRoles } from '../../Servicely/SearchFunctions';
 import { ServicelyAIToolTrigger } from '../ServicelyAIToolTrigger.node';
 
 const node = new ServicelyAIToolTrigger();
@@ -161,6 +161,23 @@ describe('node description', () => {
 		expect(named).not.toContain('toolName');
 		expect(property('prompt').required).toBe(true);
 		expect(node.description.subtitle).toBe('={{"POST /" + $parameter["path"]}}');
+	});
+
+	// Both are the tool record's own flags, off unless the option is added and set.
+	it('offers the two tool flags as toggles', () => {
+		for (const name of ['mutatesTicket', 'productionRestricted']) {
+			expect(option(name).type).toBe('boolean');
+			expect(option(name).default).toBe(false);
+		}
+	});
+
+	it('loads the Roles multi-select from the Role table', () => {
+		const roles = option('roles');
+
+		expect(roles.type).toBe('multiOptions');
+		expect(roles.typeOptions?.loadOptionsMethod).toBe('getRoles');
+		expect(roles.default).toEqual([]);
+		expect(node.methods.loadOptions.getRoles).toBe(getRoles);
 	});
 
 	it('loads the AI Agents multi-select from the SystemAIAgent registry', () => {

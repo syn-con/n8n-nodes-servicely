@@ -180,7 +180,10 @@ const AI_AGENT_TABLE = 'SystemAIAgent';
 /** The instance's AI assistants, offered by the AI Assistants selector. */
 const AI_ASSISTANT_TABLE = 'SystemAIAssistant';
 
-/** Field holding the display name in both AI registries. */
+/** The instance's roles, offered by the AI Tool node's Roles selector. */
+const ROLE_TABLE = 'Role';
+
+/** Field holding the display name in the AI registries and in the role table. */
 const AI_NAME_FIELD = 'Name';
 
 /** These registries are small, so they are read in large pages. */
@@ -535,12 +538,23 @@ export async function getAiAssistants(
   return recordsByName(this, AI_ASSISTANT_TABLE);
 }
 
+/**
+ * The instance's roles, backing the AI Tool node's **Roles** multi-select. Read
+ * exactly as the AI registries are — labelled by `Name`, storing the record id,
+ * unreadable table leaving the list empty — because a tool's roles are stored the
+ * same way: a list of record ids on the tool.
+ */
+export async function getRoles(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+  return recordsByName(this, ROLE_TABLE);
+}
+
 /** The `methods` block attached to both nodes. */
 export const listSearchMethods = {
   loadOptions: {
     getAiAgents,
     getAiAssistants,
     getFields,
+    getRoles,
   },
   listSearch: {
     searchTables,

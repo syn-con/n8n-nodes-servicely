@@ -56,6 +56,26 @@ const PARAMETER_PAGE_SIZE = 200;
 const HOLDER_TOOLS_FIELD = 'Tools';
 
 /**
+ * The tool's own `Roles`: an array of `Role` record ids, held by the tool rather
+ * than by the roles — the mirror image of the agent and assistant links below, and
+ * why it is written as one more field of the tool instead of reconciled.
+ */
+const TOOL_ROLES_FIELD = 'Roles';
+
+/** Name of the node option holding the selected role ids. */
+const ROLES_OPTION = 'roles';
+
+/**
+ * The tool's own flags, and the options that set them: what the tool does when it
+ * runs, and where it may run at all. Both are the record's to keep — nothing here
+ * acts on them — so they are named in one place and written the same way.
+ */
+const TOOL_FLAGS = [
+	{ option: 'mutatesTicket', field: 'MutatesTicket' },
+	{ option: 'productionRestricted', field: 'ProductionRestricted' },
+] as const;
+
+/**
  * What a tool can be exported to: an AI agent, or an AI assistant. The two behave
  * identically — a registry of records whose `Tools` array names the tools they may
  * call, selected on the node by record id — so they are described rather than
@@ -374,16 +394,45 @@ async function syncParameters(
  */
 
 /**
- * The records of one registry the node exports this tool to, as ids, or
- * `undefined` when the option was never added — which is not the same as an empty
- * selection. A workflow that says nothing about assistants is not asking for its
- * tool to be taken out of them, and the reconciliation is skipped entirely rather
- * than reading a table to conclude there is nothing to do.
+ * The record ids one multi-select option holds, or `undefined` when the option was
+ * never added — which is not the same as an empty selection. A workflow that says
+ * nothing about assistants is not asking for its tool to be taken out of them, and
+ * the reconciliation is skipped entirely rather than reading a table to conclude
+ * there is nothing to do; the same distinction keeps the roles a service desk set
+ * itself out of the hands of a node that never mentions roles.
  */
-function selectedIds(ctx: IHookFunctions, holder: ToolHolder): string[] | undefined {
+function selectedIds(ctx: IHookFunctions, option: string): string[] | undefined {
 	const options = ctx.getNodeParameter('options', {}) as Record<string, unknown>;
-	const selection = options[holder.option];
+	const selection = options[option];
 	return selection === undefined ? undefined : parseList(selection);
+}
+
+/**
+ * The fields of the tool record the node only writes when it has something to say
+ * about them: its roles, and the two flags. Each is a field a service desk may also
+ * set by hand, so an option the workflow never added is left as it is rather than
+ * overwritten — while an option that *is* there is written as it stands, an empty
+ * selection and an off toggle included.
+ *
+ * The distinction holds because n8n keeps an option a workflow added even when its
+ * value equals the option's default, so "added and left off" is not "absent".
+ */
+function optionalToolFields(ctx: IHookFunctions): IDataObject {
+	const options = ctx.getNodeParameter('options', {}) as Record<string, unknown>;
+	const fields: IDataObject = {};
+
+	const roles = options[ROLES_OPTION];
+	if (roles !== undefined) {
+		fields[TOOL_ROLES_FIELD] = parseList(roles);
+	}
+
+	for (const { option, field } of TOOL_FLAGS) {
+		if (options[option] !== undefined) {
+			fields[field] = Boolean(options[option]);
+		}
+	}
+
+	return fields;
 }
 
 /**
@@ -559,6 +608,9 @@ export async function createTool(this: IHookFunctions): Promise<boolean> {
 		// Timeout. n8n sets no deadline of its own, so this is the only one there is,
 		// and it is sent on every registration so a changed timeout takes effect.
 		TimeoutSeconds: readToolTimeoutSeconds(this),
+		// The roles, and what the tool is allowed to do — each only when the node
+		// mentions it, so nothing set in the service desk is cleared by silence
+		...optionalToolFields(this),
 	};
 
 	const existing = await findTool(this, key);
@@ -594,7 +646,7 @@ export async function createTool(this: IHookFunctions): Promise<boolean> {
 	const definitions = readParameterDefinitions(this);
 	const outcomes = await Promise.allSettled([
 		syncParameters(this, toolId, definitions),
-		...syncAllHolderLinks(this, toolId, (holder) => selectedIds(this, holder)),
+		...syncAllHolderLinks(this, toolId, (holder) => selectedIds(this, holder.option)),
 	]);
 	const failure = outcomes.find((outcome) => outcome.status === 'rejected');
 	if (failure?.status === 'rejected') {

@@ -7,6 +7,7 @@ import {
   getAiAgents,
   getAiAssistants,
   getFields,
+  getRoles,
   listSearchMethods,
   searchActions,
   searchControllers,
@@ -65,6 +66,7 @@ describe('listSearchMethods', () => {
       'getAiAgents',
       'getAiAssistants',
       'getFields',
+      'getRoles',
     ]);
   });
 });
@@ -329,6 +331,32 @@ describe('getAiAssistants', () => {
     const { ctx } = ctxFor([{ status: 404, body: {} }]);
 
     await expect(getAiAssistants.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([]);
+  });
+});
+
+// A tool's roles are stored the way its agents are — record ids — so the picker is
+// the same read against the role table.
+describe('getRoles', () => {
+  it('reads Role, labelling by Name and storing the row id, sorted', async () => {
+    const { ctx, http } = ctxFor([
+      ok([
+        { id: 'r1', Name: 'Service Desk' },
+        { id: 'r2', Name: 'Approver' },
+      ]),
+    ]);
+
+    await expect(getRoles.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([
+      { name: 'Approver', value: 'r2' },
+      { name: 'Service Desk', value: 'r1' },
+    ]);
+    expect(http.calls[0].options.url).toBe('/v1/Role');
+    expect(http.calls[0].options.qs).toEqual({ page: 1, page_size: DISCOVERY_PAGE_SIZE });
+  });
+
+  it('leaves the list empty on an instance without the table', async () => {
+    const { ctx } = ctxFor([{ status: 404, body: {} }]);
+
+    await expect(getRoles.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([]);
   });
 });
 
