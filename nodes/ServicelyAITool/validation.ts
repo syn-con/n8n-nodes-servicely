@@ -13,6 +13,16 @@ export interface ParameterDefinition {
 	/** What the parameter means, exported with the tool so the agent knows what to send. */
 	description: string;
 	/**
+	 * Whether a call has to carry the parameter. Absent counts as required, which is
+	 * both the older behaviour — every declared parameter was — and what the node
+	 * stores: n8n drops a field left at its default, and the box is ticked by default.
+	 *
+	 * Only the *presence* check turns off. A value that is sent is type-checked
+	 * whether or not it had to be sent: an optional parameter is one the agent may
+	 * leave out, not one it may get wrong.
+	 */
+	required?: boolean;
+	/**
 	 * Exported with the tool like any other parameter, but never rejected: a call
 	 * that leaves it out, or sends another type, still runs. The value is passed on
 	 * when it is there, so the workflow decides what its absence means.
@@ -129,8 +139,9 @@ function matchesType(value: unknown, type: ParameterType): boolean {
 
 /**
  * Validates a request body against the parameter definitions configured on the node.
- * Every declared parameter has to be present: `undefined` and `null` count as missing,
- * an empty string counts as provided.
+ * A required parameter has to be present: `undefined` and `null` count as missing, an
+ * empty string counts as provided. One that is not required may be left out, and is
+ * then absent from the validated parameters rather than present as null.
  */
 export function validateBody(
 	body: IDataObject,
@@ -154,6 +165,11 @@ export function validateBody(
 		}
 
 		if (raw === undefined || raw === null) {
+			// Not required and not sent: nothing to check and nothing to pass on, so the
+			// workflow sees the parameter missing rather than present and empty
+			if (definition.required === false) {
+				continue;
+			}
 			errors.push({
 				key: definition.key,
 				message: `Parameter "${definition.key}" is required`,

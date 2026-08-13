@@ -48,6 +48,38 @@ describe('validateBody', () => {
 		expect(result.parameters).toEqual({ b: 'here' });
 	});
 
+	it('lets a parameter that is not required be left out', () => {
+		const result = validateBody(
+			{ b: 'here' },
+			[{ ...define('a', 'string'), required: false }, define('b', 'string')],
+			strict,
+		);
+
+		expect(result.valid).toBe(true);
+		expect(result.errors).toEqual([]);
+		// Missing, rather than present as null: the workflow reads it as unsent
+		expect(result.parameters).toEqual({ b: 'here' });
+		expect('a' in result.parameters).toBe(false);
+	});
+
+	it('still type-checks a parameter that is not required when it is sent', () => {
+		const definitions = [{ ...define('a', 'integer'), required: false }];
+
+		expect(validateBody({ a: 'nope' }, definitions, strict).errors).toEqual([
+			{ key: 'a', message: 'Parameter "a" must be an integer, but a string was received' },
+		]);
+		expect(validateBody({ a: 3 }, definitions, strict).parameters).toEqual({ a: 3 });
+	});
+
+	it('treats a definition that says nothing about being required as required', () => {
+		expect(validateBody({}, [define('a', 'string')], strict).errors).toEqual([
+			{ key: 'a', message: 'Parameter "a" is required' },
+		]);
+		expect(
+			validateBody({}, [{ ...define('a', 'string'), required: true }], strict).valid,
+		).toBe(false);
+	});
+
 	it('treats null as missing but an empty string as provided', () => {
 		expect(validateBody({ a: null }, [define('a', 'string')], strict).valid).toBe(false);
 		expect(validateBody({ a: '' }, [define('a', 'string')], strict).valid).toBe(true);

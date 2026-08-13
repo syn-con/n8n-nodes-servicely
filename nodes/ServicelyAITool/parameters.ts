@@ -13,6 +13,7 @@ import type { ParameterDefinition, ParameterType } from './validation';
 interface ParameterRow {
 	paramName?: string;
 	paramType?: ParameterType | '';
+	paramRequired?: boolean;
 	paramDescription?: string;
 }
 
@@ -123,7 +124,15 @@ export function readParameterDefinitions(context: ParameterContext): ParameterDe
 			);
 		}
 
-		definitions.push({ key, type, description: (row.paramDescription || '').trim() });
+		// `!== false` and not a truthiness test: the box is ticked by default, and n8n
+		// leaves a field at its default out of the saved workflow — so an unset row is
+		// a required parameter, which is also what every row meant before the box existed
+		definitions.push({
+			key,
+			type,
+			description: (row.paramDescription || '').trim(),
+			required: row.paramRequired !== false,
+		});
 	}
 
 	if (!seen.has(PRODUCTION_PARAMETER.key)) {

@@ -116,10 +116,15 @@ function option(name: string): INodeProperties {
 	return found as INodeProperties;
 }
 
-/** One row of the Parameters fixedCollection. */
-const parameterRow = (name: string, type?: string, description?: string) => ({
+/**
+ * One row of the Parameters fixedCollection. Each field is left out unless it is
+ * given, the way n8n saves a row that was left at its default — so a row with no
+ * `required` is exactly what a workflow written before the box existed holds.
+ */
+const parameterRow = (name: string, type?: string, description?: string, required?: boolean) => ({
 	paramName: name,
 	...(type === undefined ? {} : { paramType: type }),
+	...(required === undefined ? {} : { paramRequired: required }),
 	...(description === undefined ? {} : { paramDescription: description }),
 });
 
@@ -174,8 +179,18 @@ describe('node description', () => {
 			.find((entry) => entry.name === 'paramType')
 			?.options?.map((option) => (option as { value: string }).value);
 
-		expect(fields).toEqual(['paramName', 'paramType', 'paramDescription']);
+		expect(fields).toEqual(['paramName', 'paramType', 'paramRequired', 'paramDescription']);
 		expect(types).toEqual(['boolean', 'integer', 'number', 'string']);
+	});
+
+	// A row saved before the box existed has no value for it, and every parameter
+	// had to be sent then — so the ticked default is what keeps those tools strict.
+	it('asks for an argument to be required by default', () => {
+		const row = property('parameters').options?.[0] as { values: INodeProperties[] };
+		const required = row.values.find((entry) => entry.name === 'paramRequired');
+
+		expect(required?.type).toBe('boolean');
+		expect(required?.default).toBe(true);
 	});
 
 	// The response is n8n's to send, exactly as for its own Webhook node: the
@@ -311,6 +326,40 @@ describe('validation', () => {
 				details: [{ key: 'count', message: 'Parameter "count" is required' }],
 			},
 		});
+	});
+
+	it('runs a call that leaves out a parameter that is not required', async () => {
+		const { result, response } = await webhook({
+			params: {
+				parameters: {
+					values: [
+						parameterRow('count', 'integer'),
+						parameterRow('note', 'string', 'Anything to add', false),
+					],
+				},
+			},
+			body: { count: 2 },
+		});
+
+		expect(response.headersSent).toBe(false);
+		const [[item]] = result.workflowData as [[{ json: IDataObject }]];
+		expect(item.json.validation).toEqual({ valid: true, errors: [] });
+		// Absent rather than null, so the workflow reads it as unsent
+		expect(item.json.parameters).toEqual({ count: 2 });
+	});
+
+	it('holds a parameter that is not required to its type when it is sent', async () => {
+		const { response } = await webhook({
+			params: {
+				parameters: { values: [parameterRow('note', 'integer', 'A number, if you have one', false)] },
+			},
+			body: { note: 'not a number' },
+		});
+
+		expect(response.status).toBe(400);
+		expect(JSON.parse(response.payload as string).error.details).toEqual([
+			{ key: 'note', message: 'Parameter "note" must be an integer, but a string was received' },
+		]);
 	});
 
 	it('runs the workflow anyway when configured to, passing the errors on', async () => {

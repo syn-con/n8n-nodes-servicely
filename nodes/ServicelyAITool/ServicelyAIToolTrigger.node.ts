@@ -143,7 +143,7 @@ export class ServicelyAIToolTrigger implements INodeType {
 				},
 				default: {},
 				description:
-					'The arguments of the tool. They are exported with it and every request is validated against them. A boolean IsProduction is always exported on top of these — the agent sends true unless it was asked for a test run — but it is not validated, so a call that omits it still runs. Declaring one here replaces it, and then it is validated like any other.',
+					'The arguments of the tool. They are exported with it and every request is validated against them: a required argument has to be sent, and any argument that is sent has to have the declared type. A boolean IsProduction is always exported on top of these — the agent sends true unless it was asked for a test run — but it is not validated, so a call that omits it still runs. Declaring one here replaces it, and then it is validated like any other.',
 				options: [
 					{
 						name: 'values',
@@ -188,6 +188,19 @@ export class ServicelyAIToolTrigger implements INodeType {
 								// definition then survives an import on another instance.
 								default: '',
 								description: 'The type the value must have. Defaults to String.',
+							},
+							{
+								displayName: 'Param Required',
+								name: 'paramRequired',
+								type: 'boolean',
+								noDataExpression: true,
+								// Ticked by default, so a parameter declared before this box existed —
+								// where every one of them had to be sent — keeps being validated the
+								// same way. n8n drops the field from the saved workflow while it is
+								// ticked, which is why an absent value reads as required.
+								default: true,
+								description:
+									'Whether a call has to send this argument. Turn it off and a call that leaves it out still runs; one that does send it still has to send the declared type. This is checked here only — the tool is exported with the argument either way.',
 							},
 							{
 								displayName: 'Param Description',

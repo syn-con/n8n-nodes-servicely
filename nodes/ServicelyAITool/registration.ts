@@ -286,7 +286,13 @@ async function writeParameter(
 	}
 }
 
-/** The row a declared parameter should have, at its position in the declared order. */
+/**
+ * The row a declared parameter should have, at its position in the declared order.
+ *
+ * A definition's `required` is deliberately not among the fields: it says what this
+ * node's webhook rejects, and the parameter table is not asked to carry a flag it
+ * may not have a column for. Every declared parameter is mirrored either way.
+ */
 function parameterFields(definition: ParameterDefinition, order: number): IDataObject {
 	return {
 		Name: definition.key,
