@@ -182,11 +182,11 @@ export class ServicelyAIToolTrigger implements INodeType {
 										value: 'string',
 									},
 								],
-								// The empty default is deliberate. n8n drops parameter values that equal
-								// their default when a workflow is saved, so a default that cannot be
-								// picked is what keeps paramType in the exported JSON — the tool
-								// definition then survives an import on another instance.
-								default: '',
+								// n8n drops a fixedCollection value that equals its default when the
+								// workflow is saved, so a row left on String carries no type at all —
+								// which the reader turns back into String, and the tool is registered
+								// with the same type either way.
+								default: 'string',
 								description: 'The type the value must have. Defaults to String.',
 							},
 							{
@@ -249,7 +249,7 @@ export class ServicelyAIToolTrigger implements INodeType {
 				default: {},
 				options: [
 					{
-						displayName: 'AI Agents',
+						displayName: 'AI Agent Names or IDs',
 						name: 'aiAgents',
 						type: 'multiOptions',
 						noDataExpression: true,
@@ -258,10 +258,10 @@ export class ServicelyAIToolTrigger implements INodeType {
 						},
 						default: [],
 						description:
-							"The Servicely AI agents this tool is exported to. The list shows SystemAIAgent records by Name; each agent is stored by its record ID. Activating the workflow adds the tool to those agents' Tools, and takes it out of the agents you deselect — so leaving this out unlinks the tool from every agent.",
+							'The Servicely AI agents this tool is exported to. The list shows SystemAIAgent records by Name; each agent is stored by its record ID. Activating the workflow adds the tool to those agents\' Tools, and takes it out of the agents you deselect — so leaving this out unlinks the tool from every agent. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 					},
 					{
-						displayName: 'AI Assistants',
+						displayName: 'AI Assistant Names or IDs',
 						name: 'aiAssistants',
 						type: 'multiOptions',
 						noDataExpression: true,
@@ -270,7 +270,7 @@ export class ServicelyAIToolTrigger implements INodeType {
 						},
 						default: [],
 						description:
-							"The Servicely AI assistants this tool is exported to, the same way as the agents above: SystemAIAssistant records by Name, stored by record ID, and reconciled against their Tools on activation.",
+							'The Servicely AI assistants this tool is exported to, the same way as the agents above: SystemAIAssistant records by Name, stored by record ID, and reconciled against their Tools on activation. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 					},
 					{
 						displayName: 'Allow Unknown Parameters',
@@ -323,7 +323,7 @@ export class ServicelyAIToolTrigger implements INodeType {
 							'Whether the tool is kept out of production environments. When on, it cannot be selected, executed or modified on a production system — for keeping an AI from, say, changing the schema of a live instance. Exported with the tool; leave the option out and the service desk keeps whatever the tool already says.',
 					},
 					{
-						displayName: 'Roles',
+						displayName: 'Role Names or IDs',
 						name: 'roles',
 						type: 'multiOptions',
 						noDataExpression: true,
@@ -332,7 +332,7 @@ export class ServicelyAIToolTrigger implements INodeType {
 						},
 						default: [],
 						description:
-							"The Servicely roles this tool is given. The list shows Role records by Name; each role is stored by its record ID, in the tool's own Roles. Activating the workflow writes the selection as it stands — so adding this option and selecting nothing empties the tool's roles, while leaving the option out keeps whatever the service desk holds.",
+							'The Servicely roles this tool is given. The list shows Role records by Name; each role is stored by its record ID, in the tool\'s own Roles. Activating the workflow writes the selection as it stands — so adding this option and selecting nothing empties the tool\'s roles, while leaving the option out keeps whatever the service desk holds. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 					},
 					// Everything the answer to a call is made of, for the modes that leave
 					// it to n8n rather than to a response node

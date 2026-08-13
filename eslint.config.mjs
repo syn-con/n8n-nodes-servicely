@@ -1,7 +1,13 @@
 // Flat ESLint config: framework presets first, then the package's own rules.
 // The project should follow SOLID, DRY, and KISS principles, and the rules should be set to warn or error accordingly.
+import { FlatCompat } from '@eslint/eslintrc';
 import js from '@eslint/js';
+import * as jsoncParser from 'jsonc-eslint-parser';
 import tseslint from 'typescript-eslint';
+
+// `eslint-plugin-n8n-nodes-base` ships eslintrc-style presets, so they are pulled
+// into this flat config through the compatibility layer.
+const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
 
 const productionRules = {
   '@typescript-eslint/no-explicit-any': 'warn',
@@ -66,4 +72,32 @@ export default [
       'max-lines': 'off',
     },
   },
+
+  /*
+   * n8n's own node standards — the same presets n8n runs when a community node is
+   * submitted for verification, so `npm run lint` is that check rather than an
+   * approximation of it. A rule this package deliberately disagrees with is turned
+   * off here, with the reason; anything else it reports is a real finding.
+   */
+  ...compat.extends('plugin:n8n-nodes-base/community').map((config) => ({
+    ...config,
+    files: ['package.json'],
+    languageOptions: { parser: jsoncParser },
+  })),
+  ...compat.extends('plugin:n8n-nodes-base/credentials').map((config) => ({
+    ...config,
+    files: ['credentials/**/*.ts'],
+    rules: {
+      ...config.rules,
+      // Both expect the slug a node in n8n's own repository uses, which resolves
+      // against their docs site. A community credential documents itself, so the
+      // field holds the URL that actually helps the reader.
+      'n8n-nodes-base/cred-class-field-documentation-url-miscased': 'off',
+      'n8n-nodes-base/cred-class-field-documentation-url-missing': 'off',
+    },
+  })),
+  ...compat.extends('plugin:n8n-nodes-base/nodes').map((config) => ({
+    ...config,
+    files: ['nodes/**/*.ts'],
+  })),
 ];

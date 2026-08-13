@@ -287,7 +287,7 @@ export const responseOptions: INodeProperties[] = [
 		default: '',
 		placeholder: 'e.g. application/xml',
 		description:
-			'Set a custom content-type to return if another one as the "application/json" should be returned',
+			'Set a custom content-type to return if another one as the JSON default should be returned',
 		displayOptions: {
 			show: { '/responseMode': ['lastNode'], '/responseData': ['firstEntryJson'] },
 		},

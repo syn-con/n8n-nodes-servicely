@@ -21,7 +21,7 @@ const properties: INodeProperties[] = [
     name: 'returnAll',
     type: 'boolean',
     default: false,
-    description: 'Whether to return all results by paging through them, or only up to a given limit',
+    description: 'Whether to return all results or only up to a given limit',
   },
   { ...limitProperty, displayOptions: { show: { returnAll: [false] } } },
   filtersProperty,

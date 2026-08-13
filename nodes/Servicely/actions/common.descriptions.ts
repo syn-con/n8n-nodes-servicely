@@ -330,7 +330,7 @@ export const fieldsToSetProperty: INodeProperties = {
           name: 'value',
           type: 'string',
           default: '',
-          description: 'Value to set (for reference fields, use the related record id)',
+          description: 'Value to set (for reference fields, use the related record ID)',
         },
       ],
     },

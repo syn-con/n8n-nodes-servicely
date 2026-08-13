@@ -18,12 +18,14 @@ describe('node description', () => {
   it('declares every resource and the credential', () => {
     expect(node.description.credentials).toEqual([{ name: 'servicelyApi', required: true }]);
     const resource = node.description.properties.find((property) => property.name === 'resource');
+    // Alphabetical by display name, which is what n8n's own selectors do and what
+    // its node lint requires
     expect(resource?.options?.map((option) => 'value' in option && option.value)).toEqual([
-      'object',
       'attachment',
-      'globalSearch',
-      'queue',
       'controller',
+      'globalSearch',
+      'object',
+      'queue',
     ]);
   });
 

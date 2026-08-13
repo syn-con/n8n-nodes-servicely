@@ -1,3 +1,6 @@
+/* eslint-disable n8n-nodes-base/node-filename-against-convention -- the description lives
+   beside the resources it is composed from, as n8n's own `actions/` nodes do; the class
+   that uses it is Servicely.node.ts */
 import { type INodeTypeDescription, NodeConnectionTypes } from 'n8n-workflow';
 
 import * as attachment from './attachment';
@@ -24,6 +27,7 @@ export const versionDescription: INodeTypeDescription = {
   documentationUrl: 'https://docs-servicely.atlassian.net/wiki/spaces/SD/pages/2077523978',
   defaults: { name: 'Servicely' },
   inputs: [NodeConnectionTypes.Main],
+  // eslint-disable-next-line n8n-nodes-base/node-class-description-outputs-wrong -- the rule counts array literals and cannot see through the enum, which is the current n8n spelling of 'main'
   outputs: [NodeConnectionTypes.Main],
   credentials: [{ name: 'servicelyApi', required: true }],
   properties: [
@@ -32,12 +36,13 @@ export const versionDescription: INodeTypeDescription = {
       name: 'resource',
       type: 'options',
       noDataExpression: true,
+      // Alphabetical by name, as n8n's own resource selectors are
       options: [
-        { name: 'Object', value: 'object' },
         { name: 'Attachment', value: 'attachment' },
-        { name: 'Global Search', value: 'globalSearch' },
-        { name: 'Queue', value: 'queue' },
         { name: 'Controller', value: 'controller' },
+        { name: 'Global Search', value: 'globalSearch' },
+        { name: 'Object', value: 'object' },
+        { name: 'Queue', value: 'queue' },
       ],
       default: 'object',
     },

@@ -17,7 +17,7 @@ export const replyProperties: INodeProperties[] = [
     type: 'string',
     default: '={{ $json._servicely.replyTo }}',
     required: true,
-    description: 'Id of the message to acknowledge. The Servicely Trigger emits this as _servicely.replyTo on each item.',
+    description: 'ID of the message to acknowledge. The Servicely Trigger emits this as _servicely.replyTo on each item.',
   },
   {
     displayName: 'Payload',
