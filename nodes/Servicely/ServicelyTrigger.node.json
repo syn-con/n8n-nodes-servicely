@@ -1,0 +1,20 @@
+{
+    "node": "@synergyconsulting/n8n-nodes-servicely.servicelyTrigger",
+    "nodeVersion": "1.0",
+    "codexVersion": "0.1",
+    "categories": [
+        "Productivity"
+    ],
+    "resources": {
+        "credentialDocumentation": [
+            {
+                "url": "https://docs-servicely.atlassian.net/wiki/spaces/SD/pages/2242478081"
+            }
+        ],
+        "primaryDocumentation": [
+            {
+                "url": "https://docs-servicely.atlassian.net/wiki/spaces/SD/pages/2077523978/JSON+REST+API"
+            }
+        ]
+    }
+}

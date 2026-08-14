@@ -1,0 +1,20 @@
+{
+    "node": "@synergyconsulting/n8n-nodes-servicely.servicelyAIToolTrigger",
+    "nodeVersion": "1.0",
+    "codexVersion": "0.1",
+    "categories": [
+        "Productivity"
+    ],
+    "resources": {
+        "credentialDocumentation": [
+            {
+                "url": "http://httpbin.org/#/Auth/get_bearer"
+            }
+        ],
+        "primaryDocumentation": [
+            {
+                "url": "http://httpbin.org/"
+            }
+        ]
+    }
+}
