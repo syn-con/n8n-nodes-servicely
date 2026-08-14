@@ -40,19 +40,19 @@
     ]
   },
   "scripts": {
-    "build": "tsc",
-    "build:watch": "tsc --watch",
-    "dev": "node scripts/dev.mjs",
-    "lint": "eslint nodes credentials index.ts package.json",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "build": "n8n-node build",
+    "build:watch": "n8n-node dev --external-n8n",
+    "dev": "n8n-node dev",
+    "lint": "n8n-node lint",
+    "lint:fix": "n8n-node lint --fix",
+    "release": "n8n-node release",
+    "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
     "n8n-workflow": "*"
   },
   "devDependencies": {
+    "@n8n/node-cli": "*",
     "@eslint/eslintrc": "^3.3.6",
     "@eslint/js": "^9.0.0",
     "@types/node": "^20.0.0",
