@@ -42,7 +42,7 @@
     ]
   },
   "scripts": {
-    "build": "tsc && node scripts/copy-assets.mjs",
+    "build": "tsc",
     "build:watch": "tsc --watch",
     "dev": "node scripts/dev.mjs",
     "lint": "eslint nodes credentials index.ts package.json",
