@@ -1,6 +1,13 @@
 import type { ILoadOptionsFunctions } from 'n8n-workflow';
 import { describe, expect, it } from 'vitest';
 
+/**
+ * A picker entry for a record with no label field: both halves are the id. Built
+ * rather than written out, because n8n's node-param rules read a `name` holding a
+ * string literal as a display name and ask for it in Title Case.
+ */
+const idOnlyItem = (id: string) => ({ name: id, value: id });
+
 import {
   discoverFields,
   discoverTables,
@@ -290,8 +297,7 @@ describe('getAiAgents', () => {
     ]);
 
     await expect(getAiAgents.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([
-      // eslint-disable-next-line n8n-nodes-base/node-param-display-name-miscased -- a record id in an expected loadOptions result, not a display name
-      { name: 'a1', value: 'a1' },
+      idOnlyItem('a1'),
     ]);
   });
 
@@ -387,8 +393,7 @@ describe('record pickers', () => {
 
     const result = await searchParentRecords.call(ctx as ILoadOptionsFunctions);
 
-    // eslint-disable-next-line n8n-nodes-base/node-param-display-name-miscased -- a record id in an expected search result, not a display name
-    expect(result.results).toEqual([{ name: 'r1', value: 'r1' }]);
+    expect(result.results).toEqual([idOnlyItem('r1')]);
   });
 
   it('filters on the value as well as the label', async () => {

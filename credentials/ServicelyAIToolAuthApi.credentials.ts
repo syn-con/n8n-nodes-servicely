@@ -1,8 +1,10 @@
-// This credential describes what an incoming tool call must present, so unlike ServicelyApi it
-// has no `test` block — there is no service to authenticate against.
+// This credential describes what an incoming tool call must present, so unlike
+// ServicelyApi it has no `test` request — there is no service to authenticate
+// against. Its Test button is answered by the AI Agent Tool Trigger instead, which
+// names `servicelyAiToolAuthTest` as this credential's `testedBy` and checks the
+// fields the chosen type needs are filled in and usable (see `authentication.ts`).
 import type { Icon, ICredentialType, INodeProperties } from 'n8n-workflow';
 
-// eslint-disable-next-line @n8n/community-nodes/credential-test-required -- see above: this credential is checked against incoming requests, so there is nothing to send a test request to
 export class ServicelyAIToolAuthApi implements ICredentialType {
 	name = 'servicelyAiToolAuthApi';
 

@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'crypto';
 import { type IDataObject, type IWebhookFunctions, NodeOperationError } from 'n8n-workflow';
 
 import {
+	isUsablePublicKey,
 	type JwtAlgorithm,
 	JwtConfigurationError,
 	JwtVerificationError,
@@ -12,6 +13,13 @@ import {
 export type AuthType = 'basicAuth' | 'headerAuth' | 'jwtAuth';
 
 export const AUTH_CREDENTIAL_NAME = 'servicelyAiToolAuthApi';
+
+/**
+ * Name of the node method behind the credential's **Test** button. The credential
+ * entry names it in `testedBy`, and the trigger defines it under
+ * `methods.credentialTest`, so the two are kept in step through this one constant.
+ */
+export const AUTH_CREDENTIAL_TEST = 'servicelyAiToolAuthTest';
 
 /** The credential holds the fields of whichever `type` it describes. */
 interface AuthCredential {
@@ -42,6 +50,41 @@ export class WebhookAuthorizationError extends Error {
 	) {
 		super(message ?? 'Authorization problem!');
 		this.name = 'WebhookAuthorizationError';
+	}
+}
+
+/**
+ * What the credential's **Test** button reports. There is no service to call — this
+ * credential describes what an *incoming* request must present — so the test answers
+ * the one question that can be answered without a caller: whether the fields the
+ * chosen type needs are filled in and usable, which is what otherwise surfaces as a
+ * failed tool call at the worst moment.
+ */
+export function checkAuthCredential(credential: AuthCredential): string | undefined {
+	switch (credential.type) {
+		case 'basicAuth':
+			return credential.user && credential.password
+				? undefined
+				: 'Set both User and Password on this credential';
+		case 'headerAuth':
+			if (!credential.headerName) {
+				return 'Set Header Name on this credential';
+			}
+			return credential.headerValue ? undefined : 'Set Header Value on this credential';
+		case 'jwtAuth': {
+			const usesPassphrase = (credential.keyType ?? 'passphrase') === 'passphrase';
+			if (usesPassphrase) {
+				return credential.secret ? undefined : 'Set Secret on this credential';
+			}
+			if (!credential.publicKey) {
+				return 'Set Public Key on this credential';
+			}
+			return isUsablePublicKey(formatKey(credential.publicKey))
+				? undefined
+				: 'Public Key is not a PEM key this instance can read';
+		}
+		default:
+			return `Pick a Type on this credential ("${String(credential.type)}" is not one)`;
 	}
 }
 
@@ -110,6 +153,24 @@ function authenticateHeader(context: IWebhookFunctions, credential: AuthCredenti
 	}
 }
 
+/**
+ * The verification's outcome, rather than its exception. {@link verifyJwt} raises a
+ * type per kind of failure, and each kind is answered differently — a token the
+ * caller must fix is a rejection, an unusable key is a node error — so the failure
+ * is carried out of the catch block and the answer chosen where it can be read.
+ */
+type Verification =
+	| { ok: true; payload: IDataObject }
+	| { ok: false; failure: unknown };
+
+function verify(token: string, options: { algorithm: JwtAlgorithm; key: string }): Verification {
+	try {
+		return { ok: true, payload: verifyJwt(token, options) };
+	} catch (failure) {
+		return { ok: false, failure };
+	}
+}
+
 function authenticateJwt(context: IWebhookFunctions, credential: AuthCredential): IDataObject {
 	const usesPassphrase = (credential.keyType ?? 'passphrase') === 'passphrase';
 	const key = usesPassphrase ? (credential.secret ?? '') : formatKey(credential.publicKey ?? '');
@@ -131,19 +192,22 @@ function authenticateJwt(context: IWebhookFunctions, credential: AuthCredential)
 		throw new WebhookAuthorizationError(401, 'Missing JWT');
 	}
 
-	try {
-		return verifyJwt(token, { algorithm: credential.algorithm ?? 'HS256', key });
-	} catch (error) {
-		if (error instanceof JwtVerificationError) {
-			// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- carries the HTTP status the webhook answers the caller with; a NodeApiError would make it a 500
-			throw new WebhookAuthorizationError(403, `Invalid JWT: ${error.message}`);
-		}
-		if (error instanceof JwtConfigurationError) {
-			throw new NodeOperationError(context.getNode(), error.message);
-		}
-		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- an error this handler does not recognise reaches the caller unchanged rather than as a JWT failure
-		throw error;
+	const verification = verify(token, { algorithm: credential.algorithm ?? 'HS256', key });
+	if (verification.ok) {
+		return verification.payload;
 	}
+
+	const { failure } = verification;
+	// A token this instance cannot trust is the caller's problem, and is answered as
+	// one. A key it cannot use is the node's, and fails the execution instead — as
+	// does anything the verifier raises that is neither, since that is a bug here.
+	if (failure instanceof JwtVerificationError) {
+		throw new WebhookAuthorizationError(403, `Invalid JWT: ${failure.message}`);
+	}
+	if (failure instanceof JwtConfigurationError) {
+		throw new NodeOperationError(context.getNode(), failure.message);
+	}
+	throw new NodeOperationError(context.getNode(), failure as Error);
 }
 
 /**

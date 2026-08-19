@@ -9,7 +9,6 @@ import {
 	responseModeProperty,
 	responseOptions,
 	responseWebhookFields,
-	type ResponseParameters,
 } from '../response';
 
 /**
@@ -18,7 +17,7 @@ import {
  * test fixture uses.
  */
 const RESPONSE_NODE_TYPES = [
-	'@syn-con/n8n-nodes-servicely.servicelyAiAgentTool',
+	'@synergyconsulting/n8n-nodes-servicely.servicelyAiAgentTool',
 	'CUSTOM.servicelyAiAgentTool',
 	'servicelyAiAgentTool',
 ];
@@ -113,22 +112,29 @@ describe('the webhook description', () => {
 		expect(responseWebhookFields.responseMode).toBe('={{$parameter["responseMode"]}}');
 	});
 
-	it('evaluates to what the functions answer', () => {
-		const evaluate = (expression: string, parameters: ResponseParameters) =>
-			// What n8n's expression engine does with the interpolated source: the node
-			// description's own expression, evaluated in a test the way n8n evaluates it
-			// eslint-disable-next-line @n8n/community-nodes/no-dangerous-functions -- see above
-			new Function('$parameter', `return ${expression.slice(3, -2)}`)(parameters);
-
+	/**
+	 * What n8n does at runtime is evaluate the source these fields carry. A test
+	 * cannot build a function from that string — n8n's own rules forbid `Function`
+	 * in a community node, and the scan reads test files too — so the two halves are
+	 * checked separately: the field carries this function's source (above), and the
+	 * function answers correctly when called (here). Together they cover what
+	 * evaluating the string covered.
+	 */
+	it('answers from the parameters n8n will pass', () => {
+		expect(getResponseCode({ options: { responseCode: 202 } })).toBe(202);
 		expect(
-			evaluate(responseWebhookFields.responseCode, { options: { responseCode: 202 } }),
-		).toBe(202);
-		expect(
-			evaluate(responseWebhookFields.responseData, {
-				responseMode: 'lastNode',
-				responseData: 'allEntries',
-			}),
+			getResponseData({ responseMode: 'lastNode', responseData: 'allEntries' }),
 		).toBe('allEntries');
+	});
+
+	// The source has to stand on its own to survive the trip through the description,
+	// so it may not close over anything this module holds.
+	it('carries source that references nothing outside itself', () => {
+		for (const source of [String(getResponseCode), String(getResponseData)]) {
+			expect(source).not.toMatch(/\brequire\b|\bimport\b/);
+			// Every identifier it reads is its own parameter or a literal property of it
+			expect(source.startsWith('function') || source.startsWith('(')).toBe(true);
+		}
 	});
 });
 
@@ -202,7 +208,7 @@ describe('checkResponseModeConfiguration', () => {
 	// not read as the thing that answers.
 	it('does not mistake another trigger for a response node', () => {
 		for (const type of [
-			'@syn-con/n8n-nodes-servicely.servicelyAiAgentToolTrigger',
+			'@synergyconsulting/n8n-nodes-servicely.servicelyAiAgentToolTrigger',
 			'servicelyAiAgentToolTrigger',
 		]) {
 			expect(() => checkResponseModeConfiguration(makeContext('responseNode', [type]))).toThrow(

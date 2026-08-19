@@ -6,7 +6,7 @@ import * as globalSearch from './globalSearch';
 import type { Servicely } from './node.type';
 import * as object from './object';
 import * as queue from './queue';
-import { versionDescription } from './versionDescription';
+import { properties } from './properties';
 
 /** One operation module: its property fragment and its per-item executor. */
 interface Action {
@@ -44,10 +44,10 @@ function actionFor(servicely: Servicely): Action | undefined {
  * and a single-option selector (Controller's only operation is "Invoke") can never
  * be present at all. Reading one without a fallback fails the execution with
  * n8n's internal `Could not get parameter "operation"`. Taking the fallback from
- * the description keeps it from drifting away from what the UI shows.
+ * the fields themselves keeps it from drifting away from what the UI shows.
  */
 function declaredDefault(name: string, resource?: string): string {
-  const property = versionDescription.properties.find((candidate) => {
+  const property = properties.find((candidate) => {
     if (candidate.name !== name) {
       return false;
     }

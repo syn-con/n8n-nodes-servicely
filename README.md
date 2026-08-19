@@ -15,7 +15,7 @@ An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform.
 ### In n8n (community nodes)
 
 1. Go to **Settings → Community Nodes → Install**.
-2. Enter `@syn-con/n8n-nodes-servicely` and confirm.
+2. Enter `@synergyconsulting/n8n-nodes-servicely` and confirm.
 3. The **Servicely** node and **Servicely API** credential become available after n8n restarts.
 
 > Community nodes require self-hosted n8n, or n8n Cloud with verified community nodes enabled.
@@ -31,7 +31,7 @@ npm run dev
 ```
 
 `npm run dev` builds the node, links it into n8n's custom-nodes directory
-(`~/.n8n/custom/node_modules/@syn-con/n8n-nodes-servicely`), and starts n8n at
+(`~/.n8n/custom/node_modules/@synergyconsulting/n8n-nodes-servicely`), and starts n8n at
 <http://localhost:5678>. n8n loads nodes at startup, so after changing code,
 stop it (Ctrl+C) and re-run `npm run dev` to pick up the changes.
 
@@ -310,7 +310,7 @@ Tests stub `helpers.httpRequestWithAuthentication` rather than hitting a live in
 
 ### Publishing
 
-`.github/workflows/publish.yml` publishes to npm on a version change in `package.json`, from CI only — n8n requires every community node to be published by a GitHub action carrying a [provenance](https://docs.npmjs.com/generating-provenance-statements) statement, which a local `npm publish` cannot produce. The job lints, typechecks and tests before it publishes, then runs n8n's `@n8n/scan-community-package` against the published version. It needs one repository secret, `NPM_TOKEN` (an npm automation token with publish rights on the `@syn-con` scope).
+`.github/workflows/publish.yml` publishes to npm on a version change in `package.json`, from CI only — n8n requires every community node to be published by a GitHub action carrying a [provenance](https://docs.npmjs.com/generating-provenance-statements) statement, which a local `npm publish` cannot produce. The job lints, typechecks and tests before it publishes, then runs n8n's `@n8n/scan-community-package` against the published version. It needs one repository secret, `NPM_TOKEN` (an npm automation token with publish rights on the `@synergyconsulting` scope).
 
 ### Architecture
 
@@ -380,6 +380,22 @@ nodes/ServicelyAITool/
 
 Adding an operation means: add `<name>.operation.ts`, register it in the
 resource's `index.ts` (export + selector option), and add it to `node.type.ts`.
+
+### Passing n8n's verification scan
+
+`npx @n8n/scan-community-package <package>@<version>` is what n8n runs on a published
+version, and it lints the **attested source** — the repository at the commit named in
+the package's npm provenance, tests included — with `allowInlineConfig: false`. An
+`eslint-disable` comment therefore counts for nothing there: a rule has to be
+satisfied by the code, not exempted. `npm run lint:scan` runs the same lint the same
+way locally, so a finding shows up before a release rather than after one.
+
+`npm run lint` (n8n's own CLI) does honour inline comments, so the two disagree by
+design — `lint:scan` is the stricter of the pair and the one that gates verification.
+
+> The scanner's published versions pin `typescript@7` against a `@typescript-eslint`
+> that requires `<6.1`, so `npx` aborts on `ERESOLVE` before running it. Until that is
+> fixed upstream, `lint:scan` is the practical way to get the same answer.
 
 ## Resources
 

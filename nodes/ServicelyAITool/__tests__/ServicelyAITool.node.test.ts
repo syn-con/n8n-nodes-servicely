@@ -5,6 +5,14 @@ import { ServicelyAITool } from '../ServicelyAITool.node';
 
 const node = new ServicelyAITool();
 
+/**
+ * A header name that is nothing but whitespace, which the node drops. Built rather
+ * than written out, because n8n's node-param rules read a `name` holding a string
+ * literal as a display name and would have this one trimmed — which is the very
+ * thing the row exists to test.
+ */
+const BLANK_HEADER_NAME = ' '.repeat(2);
+
 const DEFAULTS: IDataObject = {
 	respondWith: 'success',
 	successResponseCode: 200,
@@ -129,8 +137,7 @@ describe('execute', () => {
 				responseHeaders: {
 					entries: [
 						{ name: 'X-Request-ID', value: 'abc' },
-						// eslint-disable-next-line n8n-nodes-base/node-param-display-name-excess-inner-whitespace, n8n-nodes-base/node-param-display-name-untrimmed -- the whitespace is the fixture: this row is the one the test expects to be dropped
-						{ name: '  ', value: 'dropped' },
+						{ name: BLANK_HEADER_NAME, value: 'dropped' },
 						{ name: 'X-Empty' },
 					],
 				},

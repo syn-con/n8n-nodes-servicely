@@ -1,5 +1,5 @@
 {
-    "node": "@syn-con/n8n-nodes-servicely.servicelyTrigger",
+    "node": "@synergyconsulting/n8n-nodes-servicely.servicelyTrigger",
     "nodeVersion": "1.0",
     "codexVersion": "0.1",
     "categories": [

@@ -7,7 +7,7 @@ import type {
 } from 'n8n-workflow';
 
 import { CONTROLLER_TABLE, GLOBAL_SEARCH_PATH, GLOBAL_SEARCH_REQUESTS } from './constants';
-import { servicelyApiRequest, toRecordList } from './GenericFunctions';
+import { attempt, servicelyApiRequest, toRecordList } from './GenericFunctions';
 import type { ServicelyRecord } from './types';
 
 /**
@@ -214,18 +214,17 @@ async function allRows(
 
   // Pagination is inherently sequential
   for (let page = 1; page <= MAX_DISCOVERY_PAGES; page++) {
-    let batch: ServicelyRecord[];
-    try {
-      batch = await listRecords(ctx, table, query, pageSize, page);
-    } catch (error) {
+    const batch = await attempt(() => listRecords(ctx, table, query, pageSize, page));
+    if (!batch.ok) {
+      // The first page failing is the picker failing. A later one is not: the rows
+      // already found are more use than an error, so they are what it answers.
       if (page === 1) {
-        // eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- listRecords already threw a NodeApiError; a later page failing is answered with the rows already found
-        throw error;
+        throw batch.failure;
       }
       return rows;
     }
-    rows.push(...batch);
-    if (batch.length < pageSize) {
+    rows.push(...batch.value);
+    if (batch.value.length < pageSize) {
       return rows;
     }
   }

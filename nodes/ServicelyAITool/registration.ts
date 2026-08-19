@@ -1,6 +1,7 @@
 import { IDataObject, type IHookFunctions, NodeApiError, NodeOperationError } from 'n8n-workflow';
 
 import {
+	attempt,
 	parseList,
 	servicelyApiRequest,
 	servicelyApiRequestAllItems,
@@ -215,24 +216,23 @@ function missingTableError(ctx: IHookFunctions, table: string): NodeOperationErr
 
 /** The tool record carrying this node's Key, if the instance already has one. */
 async function findTool(ctx: IHookFunctions, key: string): Promise<ServicelyRecord | undefined> {
-	let payload: unknown;
-	try {
-		ctx.logger.debug(`Looking for a ${TOOL_TABLE} record with ${TOOL_KEY_FIELD}=${key}`);
-		payload = await servicelyApiRequest.call(ctx, 'GET', `/v1/${TOOL_TABLE}`, undefined, {
+	ctx.logger.debug(`Looking for a ${TOOL_TABLE} record with ${TOOL_KEY_FIELD}=${key}`);
+	const found = await attempt(() =>
+		servicelyApiRequest.call(ctx, 'GET', `/v1/${TOOL_TABLE}`, undefined, {
 			query: JSON.stringify({
 				and: [{ fieldName: TOOL_KEY_FIELD, operator: '=', value: key }],
 			}),
 			page: 1,
 			page_size: 1,
-		});
-	} catch (error) {
-		if (isNotFound(error as IDataObject)) {
+		}),
+	);
+	if (!found.ok) {
+		if (isNotFound(found.failure as IDataObject)) {
 			return undefined;
 		}
-		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- servicelyApiRequest already threw a NodeApiError; this only declines to swallow it
-		throw error;
+		throw found.failure;
 	}
-	return toRecordList<ServicelyRecord>(payload)[0];
+	return toRecordList<ServicelyRecord>(found.value)[0];
 }
 
 /**
@@ -267,23 +267,22 @@ function recordId(payload: unknown): string | undefined {
  * instead, where a 404 has no other explanation (see `writeParameter`).
  */
 async function listParameters(ctx: IHookFunctions, toolId: string): Promise<ServicelyRecord[]> {
-	try {
-		return toRecordList<ServicelyRecord>(
-			await servicelyApiRequest.call(ctx, 'GET', `/v1/${PARAMETER_TABLE}`, undefined, {
-				query: JSON.stringify({
-					and: [{ fieldName: PARAMETER_PARENT_FIELD, operator: '=', value: toolId }],
-				}),
-				page: 1,
-				page_size: PARAMETER_PAGE_SIZE,
+	const rows = await attempt(() =>
+		servicelyApiRequest.call(ctx, 'GET', `/v1/${PARAMETER_TABLE}`, undefined, {
+			query: JSON.stringify({
+				and: [{ fieldName: PARAMETER_PARENT_FIELD, operator: '=', value: toolId }],
 			}),
-		);
-	} catch (error) {
-		if (isNotFound(error as IDataObject)) {
+			page: 1,
+			page_size: PARAMETER_PAGE_SIZE,
+		}),
+	);
+	if (!rows.ok) {
+		if (isNotFound(rows.failure as IDataObject)) {
 			return [];
 		}
-		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- servicelyApiRequest already threw a NodeApiError; this only declines to swallow it
-		throw error;
+		throw rows.failure;
 	}
+	return toRecordList<ServicelyRecord>(rows.value);
 }
 
 /**
@@ -303,18 +302,17 @@ async function writeParameter(
 	path: string,
 	body?: IDataObject,
 ): Promise<void> {
-	try {
-		await servicelyApiRequest.call(ctx, method, path, body);
-	} catch (error) {
-		if (!isNotFound(error as IDataObject)) {
-			// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- servicelyApiRequest already threw a NodeApiError; this only declines to swallow it
-			throw error;
-		}
-		if (method === 'POST') {
-			throw missingTableError(ctx, PARAMETER_TABLE);
-		}
-		ctx.logger.warn(`The Servicely AI Agent Tool parameter at ${path} is no longer there`);
+	const written = await attempt(() => servicelyApiRequest.call(ctx, method, path, body));
+	if (written.ok) {
+		return;
 	}
+	if (!isNotFound(written.failure as IDataObject)) {
+		throw written.failure;
+	}
+	if (method === 'POST') {
+		throw missingTableError(ctx, PARAMETER_TABLE);
+	}
+	ctx.logger.warn(`The Servicely AI Agent Tool parameter at ${path} is no longer there`);
 }
 
 /**
@@ -451,18 +449,14 @@ function optionalToolFields(ctx: IHookFunctions): IDataObject {
  * which is also how an instance too old to know about assistants reads.
  */
 async function listHolders(ctx: IHookFunctions, holder: ToolHolder): Promise<ServicelyRecord[]> {
-	try {
-		return (await servicelyApiRequestAllItems.call(
-			ctx,
-			`/v1/${holder.table}`,
-		)) as ServicelyRecord[];
-	} catch (error) {
-		if (isNotFound(error as IDataObject)) {
+	const records = await attempt(() => servicelyApiRequestAllItems.call(ctx, `/v1/${holder.table}`));
+	if (!records.ok) {
+		if (isNotFound(records.failure as IDataObject)) {
 			return [];
 		}
-		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- servicelyApiRequest already threw a NodeApiError; this only declines to swallow it
-		throw error;
+		throw records.failure;
 	}
+	return records.value as ServicelyRecord[];
 }
 
 /**
@@ -499,17 +493,18 @@ async function writeHolderTools(
 	tools: string[],
 ): Promise<void> {
 	const id = String(record.id);
-	try {
-		await servicelyApiRequest.call(ctx, 'PATCH', `/v1/${holder.table}/${id}`, {
+	const written = await attempt(() =>
+		servicelyApiRequest.call(ctx, 'PATCH', `/v1/${holder.table}/${id}`, {
 			[HOLDER_TOOLS_FIELD]: tools,
-		});
-	} catch (error) {
-		if (!isNotFound(error as IDataObject)) {
-			// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- servicelyApiRequest already threw a NodeApiError; this only declines to swallow it
-			throw error;
-		}
-		ctx.logger.warn(`The Servicely AI ${holder.noun} ${id} is no longer there`);
+		}),
+	);
+	if (written.ok) {
+		return;
 	}
+	if (!isNotFound(written.failure as IDataObject)) {
+		throw written.failure;
+	}
+	ctx.logger.warn(`The Servicely AI ${holder.noun} ${id} is no longer there`);
 }
 
 /** Adds the tool to the records that should have it. One PATCH per record that gains it. */

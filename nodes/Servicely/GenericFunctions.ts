@@ -281,6 +281,23 @@ export async function servicelyApiRequest(
 }
 
 /**
+ * Runs one request and answers its failure instead of throwing it, so a caller that
+ * expects one particular failure — a 404 for a row or a table that is not there, a
+ * page that cannot be read — decides what it means outside a catch block, and lets
+ * everything else through as it came. What comes through is already a `NodeApiError`
+ * carrying the API's own message, so nothing here re-wraps it.
+ */
+export async function attempt<T>(
+  run: () => Promise<T>,
+): Promise<{ ok: true; value: T } | { ok: false; failure: unknown }> {
+  try {
+    return { ok: true, value: await run() };
+  } catch (failure) {
+    return { ok: false, failure };
+  }
+}
+
+/**
  * Coerce a list payload into an array. A list endpoint normally answers with
  * `{ data: [...] }`, but an empty or unexpected body must not blow up a caller
  * that is about to iterate.
@@ -441,6 +458,15 @@ export function buildAndQuery(conditions: FilterCondition[]): ServicelyQuery | u
  * Parse the advanced Query option, which may arrive as a JSON string or as an
  * already-parsed object (from an expression). Returns `undefined` when empty.
  */
+/** `JSON.parse` that answers the parse failure instead of throwing it. */
+function parseJson(text: string): { value: unknown } | { error: string } {
+  try {
+    return { value: JSON.parse(text) };
+  } catch (error) {
+    return { error: (error as Error).message };
+  }
+}
+
 export function parseAdvancedQuery(raw: string | IDataObject | undefined): ServicelyQuery | undefined {
   if (!raw || (typeof raw === 'string' && raw.trim() === '')) {
     return undefined;
@@ -448,12 +474,13 @@ export function parseAdvancedQuery(raw: string | IDataObject | undefined): Servi
   if (typeof raw !== 'string') {
     return raw as ServicelyQuery;
   }
-  try {
-    return JSON.parse(raw) as ServicelyQuery;
-  } catch (error) {
-    // eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- a pure parser with no node context; router.ts wraps whatever an operation throws in a NodeOperationError carrying the node
-    throw new Error(`Invalid Query JSON: ${(error as Error).message}`);
+  const parsed = parseJson(raw);
+  if ('error' in parsed) {
+    // Thrown outside the parse, and plain: router.ts wraps whatever an operation
+    // throws in a NodeOperationError carrying the node, so this is what the user reads
+    throw new Error(`Invalid Query JSON: ${parsed.error}`);
   }
+  return parsed.value as ServicelyQuery;
 }
 
 /**

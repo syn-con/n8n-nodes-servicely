@@ -6,7 +6,7 @@ import * as controller from '../actions/controller';
 import * as globalSearch from '../actions/globalSearch';
 import * as object from '../actions/object';
 import * as queue from '../actions/queue';
-import { versionDescription } from '../actions/versionDescription';
+import { properties } from '../actions/properties';
 import { listSearchMethods } from '../SearchFunctions';
 
 /**
@@ -76,9 +76,9 @@ describe.each(Object.entries(RESOURCES))('%s resource', (resource, module) => {
   });
 });
 
-describe('versionDescription', () => {
+describe('the node properties', () => {
   it('includes every resource in the Resource selector', () => {
-    const selector = versionDescription.properties.find((property) => property.name === 'resource');
+    const selector = properties.find((property) => property.name === 'resource');
     const values = (selector?.options ?? []).map((option) => String('value' in option ? option.value : ''));
 
     expect(values.sort()).toEqual(Object.keys(RESOURCES).sort());
@@ -87,7 +87,7 @@ describe('versionDescription', () => {
   it('scopes every property to a resource, apart from the global ones', () => {
     const global = ['resource', 'requestOptions'];
 
-    for (const property of versionDescription.properties) {
+    for (const property of properties) {
       if (global.includes(property.name)) {
         continue;
       }
@@ -100,7 +100,7 @@ describe('versionDescription', () => {
   it('never leaves two properties of the same name shown in the same place', () => {
     const seen = new Map<string, string[]>();
 
-    for (const property of versionDescription.properties) {
+    for (const property of properties) {
       const key = `${property.name}:${JSON.stringify(property.displayOptions ?? {})}`;
       const previous = seen.get(key) ?? [];
       previous.push(property.displayName);
@@ -113,7 +113,7 @@ describe('versionDescription', () => {
   });
 
   it('only references listSearch methods that exist', () => {
-    for (const property of versionDescription.properties) {
+    for (const property of properties) {
       for (const mode of property.modes ?? []) {
         const method = mode.typeOptions?.searchListMethod;
         if (method) {
@@ -136,6 +136,6 @@ describe('versionDescription', () => {
       }
     };
 
-    walk(versionDescription.properties);
+    walk(properties);
   });
 });

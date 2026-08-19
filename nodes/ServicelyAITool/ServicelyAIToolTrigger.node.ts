@@ -1,17 +1,22 @@
 import {
+	type ICredentialsDecrypted,
+	type ICredentialTestFunctions,
 	type IDataObject,
+	type INodeCredentialTestResult,
 	type INodeType,
 	type INodeTypeDescription,
 	type IWebhookFunctions,
 	type IWebhookResponseData,
 	NodeConnectionTypes,
+	NodeOperationError,
 } from 'n8n-workflow';
 
 import { getAiAgents, getAiAssistants, getRoles } from '../Servicely/SearchFunctions';
 import {
 	type AuthenticationResult,
-	AUTH_CREDENTIAL_NAME,
+	AUTH_CREDENTIAL_TEST,
 	authenticateRequest,
+	checkAuthCredential,
 	WebhookAuthorizationError,
 } from './authentication';
 import { DEFAULT_EXECUTION_SCRIPT, readParameterDefinitions } from './parameters';
@@ -76,10 +81,15 @@ export class ServicelyAIToolTrigger implements INodeType {
 				required: true,
 			},
 			{
-				// Decides what a caller has to present; the endpoint is never public
-				name: AUTH_CREDENTIAL_NAME,
+				// Decides what a caller has to present; the endpoint is never public.
+				// Spelled out rather than taken from AUTH_CREDENTIAL_NAME / _TEST: n8n's
+				// verification scan reads this array statically and only sees literals.
+				// `__tests__/ServicelyAIToolTrigger.node.test.ts` holds the two in step.
+				name: 'servicelyAiToolAuthApi',
 				'displayName': AUTH_DISPLAY_NAME,
 				required: true,
+				// Nothing to call, so the test checks the credential is usable as written
+				testedBy: 'servicelyAiToolAuthTest',
 			},
 		],
 		webhooks: [
@@ -345,7 +355,26 @@ export class ServicelyAIToolTrigger implements INodeType {
 
 
 	/** Only the registries this node selects from: the pickers of the Servicely node have no counterpart here. */
-	methods = { loadOptions: { getAiAgents, getAiAssistants, getRoles } };
+	methods = {
+		loadOptions: { getAiAgents, getAiAssistants, getRoles },
+		credentialTest: {
+			/**
+			 * Answers the **Test** button on the auth credential. Named by
+			 * {@link AUTH_CREDENTIAL_TEST}, which the credential entry above points at.
+			 */
+			async [AUTH_CREDENTIAL_TEST](
+				this: ICredentialTestFunctions,
+				credential: ICredentialsDecrypted,
+			): Promise<INodeCredentialTestResult> {
+				const problem = checkAuthCredential(
+					(credential.data ?? {}) as unknown as Parameters<typeof checkAuthCredential>[0],
+				);
+				return problem === undefined
+					? { status: 'OK', message: 'The credential is complete and usable' }
+					: { status: 'Error', message: problem };
+			},
+		},
+	};
 
 	/** Registers the tool in the service desk on activation, removes it on deactivation. */
 	webhookMethods = toolRegistrationMethods;
@@ -374,8 +403,9 @@ export class ServicelyAIToolTrigger implements INodeType {
 				response.end(JSON.stringify({ success: false, error: { message: error.message } }));
 				return { noWebhookResponse: true };
 			}
-			// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- only an authorization failure is answered here; anything else is left for n8n to report as it is
-			throw error;
+			// Only an authorization failure is answered to the caller. Anything else is
+			// the node's own failure, and carries the node so n8n can report it as one.
+			throw new NodeOperationError(this.getNode(), error as Error);
 		}
 
 		const definitions = readParameterDefinitions(this);

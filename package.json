@@ -47,6 +47,7 @@
     "lint": "n8n-node lint",
     "lint:fix": "n8n-node lint --fix",
     "lint:quality": "eslint --config eslint.quality.config.mjs .",
+    "lint:scan": "eslint --no-inline-config .",
     "release": "n8n-node release",
     "prepublishOnly": "npm run build"
   },

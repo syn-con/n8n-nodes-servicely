@@ -1,5 +1,5 @@
 /**
- * Public entry point for the @syn-con/n8n-nodes-servicely package.
+ * Public entry point for the @synergyconsulting/n8n-nodes-servicely package.
  *
  * n8n discovers nodes and credentials via the `n8n` block in package.json; this
  * module exists so `main` resolves to a real module and re-exports the node and

@@ -3,12 +3,13 @@ import type { IDataObject, INodeProperties, IWebhookFunctions } from 'n8n-workfl
 import { describe, expect, it } from 'vitest';
 
 import { getAiAgents, getRoles } from '../../Servicely/SearchFunctions';
+import { AUTH_CREDENTIAL_NAME, AUTH_CREDENTIAL_TEST } from '../authentication';
 import { ServicelyAIToolTrigger } from '../ServicelyAIToolTrigger.node';
 
 const node = new ServicelyAIToolTrigger();
 
 /** The response node, as n8n types it once the package is installed. */
-const RESPONSE_NODE_TYPE = '@syn-con/n8n-nodes-servicely.servicelyAiAgentTool';
+const RESPONSE_NODE_TYPE = '@synergyconsulting/n8n-nodes-servicely.servicelyAiAgentTool';
 
 interface WebhookStubOptions {
 	params?: IDataObject;
@@ -139,6 +140,7 @@ describe('node description', () => {
 				name: 'servicelyAiToolAuthApi',
 				displayName: 'Servicely AI Agent Tool Auth',
 				required: true,
+				testedBy: 'servicelyAiToolAuthTest',
 			},
 		]);
 	});
@@ -252,6 +254,63 @@ describe('node description', () => {
 			});
 
 		expect(expressible(node.description.properties)).toEqual([]);
+	});
+
+	// The description spells the credential's name and its test's name out, because
+	// n8n's verification scan reads that array statically and only sees literals.
+	// These keep the literals and the constants behind them from drifting apart.
+	it('names the auth credential and its test with the values the code uses', () => {
+		const entry = (node.description.credentials ?? []).find(
+			(candidate) => candidate.name === AUTH_CREDENTIAL_NAME,
+		);
+
+		expect(entry, `no credential entry named ${AUTH_CREDENTIAL_NAME}`).toBeDefined();
+		expect(entry?.testedBy).toBe(AUTH_CREDENTIAL_TEST);
+	});
+
+	it('defines the credential test the description points at', () => {
+		expect(node.methods?.credentialTest?.[AUTH_CREDENTIAL_TEST]).toBeTypeOf('function');
+	});
+});
+
+describe('the credential test', () => {
+	const runTest = (data: IDataObject) =>
+		node.methods.credentialTest[AUTH_CREDENTIAL_TEST].call(
+			{} as never,
+			{ id: 'c1', name: 'auth', type: AUTH_CREDENTIAL_NAME, data } as never,
+		);
+
+	it('passes a credential that is complete', async () => {
+		await expect(
+			runTest({ type: 'headerAuth', headerName: 'X-API-KEY', headerValue: 'secret' }),
+		).resolves.toMatchObject({ status: 'OK' });
+	});
+
+	it('names the field a credential is missing', async () => {
+		await expect(runTest({ type: 'headerAuth', headerName: 'X-API-KEY' })).resolves.toMatchObject({
+			status: 'Error',
+			message: 'Set Header Value on this credential',
+		});
+		await expect(runTest({ type: 'basicAuth', user: 'ada' })).resolves.toMatchObject({
+			status: 'Error',
+		});
+	});
+
+	// The one check that is more than a presence test: a key the instance cannot read
+	// would fail every call, and says so here instead
+	it('rejects a public key that is not a PEM key', async () => {
+		await expect(
+			runTest({ type: 'jwtAuth', keyType: 'pemKey', publicKey: 'not a key' }),
+		).resolves.toMatchObject({
+			status: 'Error',
+			message: 'Public Key is not a PEM key this instance can read',
+		});
+	});
+
+	it('accepts a JWT credential with a secret', async () => {
+		await expect(
+			runTest({ type: 'jwtAuth', keyType: 'passphrase', secret: 'shhh' }),
+		).resolves.toMatchObject({ status: 'OK' });
 	});
 });
 

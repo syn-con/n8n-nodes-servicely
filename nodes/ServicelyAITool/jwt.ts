@@ -2,6 +2,7 @@ import {
 	constants,
 	createHmac,
 	createPublicKey,
+	type KeyObject,
 	timingSafeEqual,
 	verify as verifyWithKey,
 } from 'crypto';
@@ -32,18 +33,46 @@ const CLOCK_TOLERANCE_SECONDS = 5;
 
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
-function decodeSegment(segment: string, what: string): IDataObject {
-	let decoded: unknown;
+/**
+ * `JSON.parse` that answers `undefined` for text that is not JSON, so the caller
+ * decides what a failure means outside a catch block. No valid JSON text parses to
+ * `undefined`, so it is unambiguous as the failure answer.
+ */
+function parseJson(text: string): unknown {
 	try {
-		decoded = JSON.parse(Buffer.from(segment, 'base64url').toString('utf8'));
+		return JSON.parse(text);
 	} catch {
-		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- this module has no node context; authentication.ts turns these two types into a 403 and a NodeOperationError respectively
+		return undefined;
+	}
+}
+
+function decodeSegment(segment: string, what: string): IDataObject {
+	const decoded = parseJson(Buffer.from(segment, 'base64url').toString('utf8'));
+	if (decoded === undefined) {
 		throw new JwtVerificationError(`the ${what} is not valid JSON`);
 	}
 	if (typeof decoded !== 'object' || decoded === null || Array.isArray(decoded)) {
 		throw new JwtVerificationError(`the ${what} is not an object`);
 	}
 	return decoded as IDataObject;
+}
+
+/** Whether a PEM public key is one this instance can verify with at all. */
+export function isUsablePublicKey(key: string): boolean {
+	return readPublicKey(key) !== undefined;
+}
+
+/**
+ * `createPublicKey` that answers `undefined` for anything that is not a usable PEM
+ * key, so an unusable one is reported as a configuration problem from outside a
+ * catch block rather than from inside one.
+ */
+function readPublicKey(key: string): KeyObject | undefined {
+	try {
+		return createPublicKey(key);
+	} catch {
+		return undefined;
+	}
 }
 
 function hashOf(algorithm: JwtAlgorithm): 'sha256' | 'sha384' | 'sha512' {
@@ -64,11 +93,8 @@ function isSignatureValid(
 		return expected.length === signature.length && timingSafeEqual(expected, signature);
 	}
 
-	let publicKey;
-	try {
-		publicKey = createPublicKey(key);
-	} catch {
-		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- as above: no node context here, and the type is what tells a misconfiguration from a bad token
+	const publicKey = readPublicKey(key);
+	if (!publicKey) {
 		throw new JwtConfigurationError('The configured public key is not a valid PEM key');
 	}
 
