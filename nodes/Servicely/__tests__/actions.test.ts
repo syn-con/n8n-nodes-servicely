@@ -17,6 +17,16 @@ import { listSearchMethods } from '../SearchFunctions';
 
 const RESOURCES = { object, attachment, globalSearch, queue, controller };
 
+/**
+ * Operation values a resource still answers to under an older name, mapped to the
+ * name they were renamed to. A resource folder exports the same module twice for
+ * one of these, so its export list is a superset of what the selector offers —
+ * everything named here is exempt from the match below, and nothing else is.
+ */
+const LEGACY_OPERATIONS: Record<string, Record<string, string>> = {
+  controller: { call: 'invoke' },
+};
+
 /** Operation values offered by a resource's Operation selector. */
 function offeredOperations(properties: INodeProperties[], resource: string): string[] {
   const selector = properties.find(
@@ -38,8 +48,19 @@ describe.each(Object.entries(RESOURCES))('%s resource', (resource, module) => {
     expect(offered.length).toBeGreaterThan(0);
   });
 
-  it('exports exactly the operations it offers', () => {
-    expect(exported.sort()).toEqual([...offered].sort());
+  const legacy = LEGACY_OPERATIONS[resource] ?? {};
+
+  it('exports exactly the operations it offers, plus its legacy names', () => {
+    expect(exported.sort()).toEqual([...offered, ...Object.keys(legacy)].sort());
+  });
+
+  it('points every legacy name at the operation it was renamed to', () => {
+    const modules = module as unknown as Record<string, unknown>;
+
+    for (const [older, current] of Object.entries(legacy)) {
+      expect(offered, `${resource}.${current}`).toContain(current);
+      expect(modules[older], `${resource}.${older}`).toBe(modules[current]);
+    }
   });
 
   it('gives every operation an execute function', () => {

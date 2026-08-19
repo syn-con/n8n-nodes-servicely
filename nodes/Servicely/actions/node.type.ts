@@ -5,7 +5,8 @@ type ServicelyMap = {
   object: 'create' | 'delete' | 'get' | 'getAll' | 'update';
   attachment: 'download' | 'list' | 'upload';
   queue: 'replyFailure' | 'replySuccess';
-  controller: 'call';
+  // `call` is the pre-rename value of `invoke`, still accepted (see controller/index.ts)
+  controller: 'invoke' | 'call';
   globalSearch: 'batchSearch' | 'search';
 };
 

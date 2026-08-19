@@ -30,7 +30,9 @@ const properties: INodeProperties[] = [
 ];
 
 export const description = updateDisplayOptions(
-  { show: { resource: ['controller'], operation: ['call'] } },
+  // `call` alongside `invoke`: the operation was called that before, and a workflow
+  // holding the old value has to keep showing the fields it fills in
+  { show: { resource: ['controller'], operation: ['invoke', 'call'] } },
   properties,
 );
 

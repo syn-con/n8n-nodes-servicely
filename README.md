@@ -128,11 +128,13 @@ Acknowledge a message dequeued by the [Servicely Trigger](#trigger) back to the 
 
 ### Controller
 
-Call any controller registered on the instance directly — the escape hatch for instance-specific controllers the typed resources above do not cover.
+Invoke any controller registered on the instance directly — the escape hatch for instance-specific controllers the typed resources above do not cover.
 
 | Operation | Method | Notes |
 |-----------|--------|-------|
-| **Call** | `POST {instanceUrl}/controller/{ControllerName}` | Posts a raw JSON body. Controller endpoints sit at the instance root, not under `/v1`. |
+| **Invoke** | `POST {instanceUrl}/controller/{ControllerName}` | Posts a raw JSON body. Controller endpoints sit at the instance root, not under `/v1`. |
+
+This operation was called **Call** and stored as `operation: "call"`, which is still accepted and runs exactly the same request — a workflow that names the old value does not have to be edited. n8n saves only the parameters that differ from their default, so a workflow built in the UI never held the value at all; one created through the API or imported as JSON does.
 
 - **Controller** — **From List** shows `SystemController` records, storing each record's `Name` (the URL segment) and labelling it with `Label` / `Title` / `Description` when present; or enter a controller name / expression manually.
 - **Body (JSON)** — the request body, passed through untouched. It must be a JSON object; an expression may supply an object directly.
@@ -344,7 +346,7 @@ nodes/Servicely/
       replySuccess.operation.ts
     controller/
       index.ts
-      call.operation.ts        # raw POST to /controller/{ControllerName}
+      invoke.operation.ts      # raw POST to /controller/{ControllerName}
   GenericFunctions.ts          # API request helpers + query builders
   SearchFunctions.ts           # listSearch pickers + loadOptions loaders
                                #   (fields, AI agents, AI assistants, roles)

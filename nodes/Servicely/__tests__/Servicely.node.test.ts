@@ -424,7 +424,7 @@ describe('controller resource', () => {
       http,
       params: {
         resource: 'controller',
-        operation: 'call',
+        operation: 'invoke',
         controllerName: 'MyController',
         body: '{"foo":"bar","n":1}',
       },
@@ -440,7 +440,7 @@ describe('controller resource', () => {
     const http = makeHttpStub([ok({})]);
     await run({
       http,
-      params: { resource: 'controller', operation: 'call', controllerName: 'MyController', body: { foo: 'bar' } },
+      params: { resource: 'controller', operation: 'invoke', controllerName: 'MyController', body: { foo: 'bar' } },
     });
 
     expect(http.calls[0].options.body).toEqual({ foo: 'bar' });
@@ -450,7 +450,7 @@ describe('controller resource', () => {
     const http = makeHttpStub([ok({})]);
     await run({
       http,
-      params: { resource: 'controller', operation: 'call', controllerName: 'MyController', body: '  ' },
+      params: { resource: 'controller', operation: 'invoke', controllerName: 'MyController', body: '  ' },
     });
 
     expect(http.calls[0].options.body).toEqual({});
@@ -460,7 +460,7 @@ describe('controller resource', () => {
     const http = makeHttpStub([ok([{ id: '1' }, { id: '2' }])]);
     const items = await run({
       http,
-      params: { resource: 'controller', operation: 'call', controllerName: 'MyController' },
+      params: { resource: 'controller', operation: 'invoke', controllerName: 'MyController' },
     });
 
     expect(items).toEqual([
@@ -472,39 +472,54 @@ describe('controller resource', () => {
   it('wraps a scalar response and reports success for an empty one', async () => {
     const scalar = await run({
       http: makeHttpStub([ok('queued')]),
-      params: { resource: 'controller', operation: 'call', controllerName: 'MyController' },
+      params: { resource: 'controller', operation: 'invoke', controllerName: 'MyController' },
     });
     expect(scalar[0].json).toEqual({ data: 'queued' });
 
     const empty = await run({
       http: makeHttpStub([{ status: 204 }]),
-      params: { resource: 'controller', operation: 'call', controllerName: 'MyController' },
+      params: { resource: 'controller', operation: 'invoke', controllerName: 'MyController' },
     });
     expect(empty[0].json).toEqual({ success: true });
   });
 
   it('rejects a malformed body', async () => {
     await expect(
-      run({ params: { resource: 'controller', operation: 'call', controllerName: 'MyController', body: '{nope' } }),
+      run({ params: { resource: 'controller', operation: 'invoke', controllerName: 'MyController', body: '{nope' } }),
     ).rejects.toThrow(/Invalid Body JSON/);
   });
 
   it('rejects a body that is not a JSON object', async () => {
     await expect(
-      run({ params: { resource: 'controller', operation: 'call', controllerName: 'MyController', body: '[1,2]' } }),
+      run({ params: { resource: 'controller', operation: 'invoke', controllerName: 'MyController', body: '[1,2]' } }),
     ).rejects.toThrow(/Body must be a JSON object/);
   });
 
   it('rejects a missing controller name', async () => {
-    await expect(run({ params: { resource: 'controller', operation: 'call', controllerName: '' } })).rejects.toThrow(
+    await expect(run({ params: { resource: 'controller', operation: 'invoke', controllerName: '' } })).rejects.toThrow(
       /No controller selected/,
     );
   });
 
   it('rejects an unknown operation', async () => {
-    await expect(run({ params: { resource: 'controller', operation: 'invoke' } })).rejects.toThrow(
-      /The operation "invoke" is not supported for resource "controller"/,
+    await expect(run({ params: { resource: 'controller', operation: 'summon' } })).rejects.toThrow(
+      /The operation "summon" is not supported for resource "controller"/,
     );
+  });
+
+  // `call` is what the operation was called before. A workflow built in the UI never
+  // held the value at all, but one created through the API spells it out, so the old
+  // value still has to reach the same module.
+  it('still runs the pre-rename "call" operation', async () => {
+    const http = makeHttpStub([ok({ result: 'done' })]);
+    const items = await run({
+      http,
+      params: { resource: 'controller', operation: 'call', controllerName: 'MyController', body: '{"foo":"bar"}' },
+    });
+
+    expect(http.calls[0].options.url).toBe('/controller/MyController');
+    expect(http.calls[0].options.body).toEqual({ foo: 'bar' });
+    expect(items).toEqual([{ json: { result: 'done' }, pairedItem: { item: 0 } }]);
   });
 });
 

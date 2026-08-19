@@ -41,7 +41,7 @@ function actionFor(servicely: Servicely): Action | undefined {
  *
  * n8n saves only the parameters whose value differs from their declared default,
  * so a selector the user left alone is absent from `node.parameters` altogether —
- * and a single-option selector (Controller's only operation is "Call") can never
+ * and a single-option selector (Controller's only operation is "Invoke") can never
  * be present at all. Reading one without a fallback fails the execution with
  * n8n's internal `Could not get parameter "operation"`. Taking the fallback from
  * the description keeps it from drifting away from what the UI shows.
