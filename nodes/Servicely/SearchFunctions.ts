@@ -212,13 +212,14 @@ async function allRows(
 ): Promise<ServicelyRecord[]> {
   const rows: ServicelyRecord[] = [];
 
-  /* eslint-disable no-await-in-loop -- pagination is inherently sequential */
+  // Pagination is inherently sequential
   for (let page = 1; page <= MAX_DISCOVERY_PAGES; page++) {
     let batch: ServicelyRecord[];
     try {
       batch = await listRecords(ctx, table, query, pageSize, page);
     } catch (error) {
       if (page === 1) {
+        // eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- listRecords already threw a NodeApiError; a later page failing is answered with the rows already found
         throw error;
       }
       return rows;
@@ -228,7 +229,6 @@ async function allRows(
       return rows;
     }
   }
-  /* eslint-enable no-await-in-loop */
 
   return rows;
 }

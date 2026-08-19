@@ -52,9 +52,15 @@ describe('shape', () => {
   });
 
   it('masks every secret field', () => {
-    for (const name of ['password', 'headerValue', 'secret', 'publicKey']) {
+    for (const name of ['password', 'headerValue', 'secret']) {
       expect(property(name).typeOptions?.password).toBe(true);
     }
+  });
+
+  // The counterpart of the above: a public key is not a secret, so masking it would
+  // only make the one field that has to be pasted in full harder to check
+  it('leaves the public key unmasked', () => {
+    expect(property('publicKey').typeOptions?.password).toBeUndefined();
   });
 
   it('defaults to HS256 and covers the algorithms the verifier supports', () => {

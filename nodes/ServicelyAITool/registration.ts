@@ -229,6 +229,7 @@ async function findTool(ctx: IHookFunctions, key: string): Promise<ServicelyReco
 		if (isNotFound(error as IDataObject)) {
 			return undefined;
 		}
+		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- servicelyApiRequest already threw a NodeApiError; this only declines to swallow it
 		throw error;
 	}
 	return toRecordList<ServicelyRecord>(payload)[0];
@@ -280,6 +281,7 @@ async function listParameters(ctx: IHookFunctions, toolId: string): Promise<Serv
 		if (isNotFound(error as IDataObject)) {
 			return [];
 		}
+		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- servicelyApiRequest already threw a NodeApiError; this only declines to swallow it
 		throw error;
 	}
 }
@@ -305,6 +307,7 @@ async function writeParameter(
 		await servicelyApiRequest.call(ctx, method, path, body);
 	} catch (error) {
 		if (!isNotFound(error as IDataObject)) {
+			// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- servicelyApiRequest already threw a NodeApiError; this only declines to swallow it
 			throw error;
 		}
 		if (method === 'POST') {
@@ -362,8 +365,8 @@ async function syncParameters(
 		}
 	}
 
-	/* eslint-disable no-await-in-loop -- one row at a time: the writes are few and
-	   ordering them keeps a partial failure easy to read in the log */
+	// One row at a time: the writes are few, and ordering them keeps a partial
+	// failure easy to read in the log
 	let order = PARAMETER_ORDER_START;
 	for (const definition of definitions) {
 		const fields = parameterFields(definition, order);
@@ -385,7 +388,6 @@ async function syncParameters(
 	for (const row of stale.values()) {
 		await writeParameter(ctx, 'DELETE', `/v1/${PARAMETER_TABLE}/${String(row.id)}`);
 	}
-	/* eslint-enable no-await-in-loop */
 }
 
 /**
@@ -458,6 +460,7 @@ async function listHolders(ctx: IHookFunctions, holder: ToolHolder): Promise<Ser
 		if (isNotFound(error as IDataObject)) {
 			return [];
 		}
+		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- servicelyApiRequest already threw a NodeApiError; this only declines to swallow it
 		throw error;
 	}
 }
@@ -502,6 +505,7 @@ async function writeHolderTools(
 		});
 	} catch (error) {
 		if (!isNotFound(error as IDataObject)) {
+			// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- servicelyApiRequest already threw a NodeApiError; this only declines to swallow it
 			throw error;
 		}
 		ctx.logger.warn(`The Servicely AI ${holder.noun} ${id} is no longer there`);
@@ -515,15 +519,14 @@ async function link(
 	toolId: string,
 	records: ServicelyRecord[],
 ): Promise<void> {
-	/* eslint-disable no-await-in-loop -- one record at a time, so a partial failure
-	   reads in order in the log; the sets are small and the two tasks run in parallel */
+	// One record at a time, so a partial failure reads in order in the log; the sets
+	// are small and the two tasks run in parallel
 	for (const record of records) {
 		const tools = holderTools(record);
 		if (!tools.includes(toolId)) {
 			await writeHolderTools(ctx, holder, record, [...tools, toolId]);
 		}
 	}
-	/* eslint-enable no-await-in-loop */
 }
 
 /** Takes the tool out of the records that should not have it, and only those. */
@@ -533,7 +536,7 @@ async function unlink(
 	toolId: string,
 	records: ServicelyRecord[],
 ): Promise<void> {
-	/* eslint-disable no-await-in-loop -- see link */
+	// One record at a time, for the same reason `link` above does it
 	for (const record of records) {
 		const tools = holderTools(record);
 		if (tools.includes(toolId)) {
@@ -545,7 +548,6 @@ async function unlink(
 			);
 		}
 	}
-	/* eslint-enable no-await-in-loop */
 }
 
 /**

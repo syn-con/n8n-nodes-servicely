@@ -374,6 +374,7 @@ export class ServicelyAIToolTrigger implements INodeType {
 				response.end(JSON.stringify({ success: false, error: { message: error.message } }));
 				return { noWebhookResponse: true };
 			}
+			// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- only an authorization failure is answered here; anything else is left for n8n to report as it is
 			throw error;
 		}
 

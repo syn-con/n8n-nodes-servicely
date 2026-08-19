@@ -115,8 +115,9 @@ describe('the webhook description', () => {
 
 	it('evaluates to what the functions answer', () => {
 		const evaluate = (expression: string, parameters: ResponseParameters) =>
-			// What n8n's expression engine does with the interpolated source
-			// eslint-disable-next-line @typescript-eslint/no-implied-eval
+			// What n8n's expression engine does with the interpolated source: the node
+			// description's own expression, evaluated in a test the way n8n evaluates it
+			// eslint-disable-next-line @n8n/community-nodes/no-dangerous-functions -- see above
 			new Function('$parameter', `return ${expression.slice(3, -2)}`)(parameters);
 
 		expect(

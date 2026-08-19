@@ -2,6 +2,7 @@
 // has no `test` block — there is no service to authenticate against.
 import type { Icon, ICredentialType, INodeProperties } from 'n8n-workflow';
 
+// eslint-disable-next-line @n8n/community-nodes/credential-test-required -- see above: this credential is checked against incoming requests, so there is nothing to send a test request to
 export class ServicelyAIToolAuthApi implements ICredentialType {
 	name = 'servicelyAiToolAuthApi';
 
@@ -62,6 +63,7 @@ export class ServicelyAIToolAuthApi implements ICredentialType {
 			description: 'Name of the header the request must send',
 			displayOptions: { show: { type: ['headerAuth'] } },
 		},
+		// eslint-disable-next-line @n8n/community-nodes/credential-unnecessary-password -- the header's value *is* the shared secret a caller has to present, whatever the header is named
 		{
 			displayName: 'Header Value',
 			name: 'headerValue',
@@ -104,7 +106,9 @@ export class ServicelyAIToolAuthApi implements ICredentialType {
 			displayName: 'Public Key',
 			name: 'publicKey',
 			type: 'string',
-			typeOptions: { password: true, rows: 4 },
+			// No `password`: a public key is not a secret, and masking it only makes the
+			// one field a person has to paste in full harder to check
+			typeOptions: { rows: 4 },
 			default: '',
 			placeholder: '-----BEGIN PUBLIC KEY-----',
 			description: 'The PEM public key matching the key the token was signed with',

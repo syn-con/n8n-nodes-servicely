@@ -1,5 +1,5 @@
 import type { IDataObject, IHookFunctions } from 'n8n-workflow';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_EXECUTION_SCRIPT, LIVE_RUN_PARAMETER } from '../parameters';
 import { checkToolExists, createTool, deleteTool } from '../registration';

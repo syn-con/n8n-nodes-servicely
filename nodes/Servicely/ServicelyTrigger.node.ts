@@ -76,8 +76,10 @@ export class ServicelyTrigger implements INodeType {
     defaults: { name: 'Servicely Trigger' },
     polling: true,
     inputs: [],
-    // eslint-disable-next-line n8n-nodes-base/node-class-description-outputs-wrong -- the rule counts array literals and cannot see through the enum, which is the current n8n spelling of 'main'
     outputs: [NodeConnectionTypes.Main],
+    // A schedule is what starts this node, so there is nothing for an agent to call —
+    // stated rather than left out, since n8n asks every node class to answer for it
+    usableAsTool: undefined,
     credentials: [{ name: 'servicelyApi', required: true }],
     properties: [
       {

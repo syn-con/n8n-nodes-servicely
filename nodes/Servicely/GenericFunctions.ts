@@ -249,7 +249,7 @@ export async function servicelyApiRequest(
   for (let attempt = 0; ; attempt++) {
     let response: FullResponse;
     try {
-      // eslint-disable-next-line no-await-in-loop -- retries are inherently sequential
+      // Retries are inherently sequential
       response = (await this.helpers.httpRequestWithAuthentication.call(
         this,
         'servicelyApi',
@@ -257,7 +257,7 @@ export async function servicelyApiRequest(
       )) as FullResponse;
     } catch (error) {
       if (attempt < maxRetries) {
-        // eslint-disable-next-line no-await-in-loop -- backoff before the next attempt
+        // Backoff before the next attempt
         await sleep(backoffDelay(attempt));
         continue;
       }
@@ -269,7 +269,7 @@ export async function servicelyApiRequest(
 
     if (response.statusCode >= 400) {
       if (isRetryable(response.statusCode) && attempt < maxRetries) {
-        // eslint-disable-next-line no-await-in-loop -- backoff before the next attempt
+        // Backoff before the next attempt
         await sleep(retryAfterDelay(response.headers) ?? backoffDelay(attempt));
         continue;
       }
@@ -326,7 +326,7 @@ export async function servicelyApiRequestAllItems(
   const records: IDataObject[] = [];
   let page = 1;
 
-  /* eslint-disable no-await-in-loop -- pagination is inherently sequential */
+  // Pagination is inherently sequential
   for (; ;) {
     const data = toRecordList<IDataObject>(
       await servicelyApiRequest.call(this, 'GET', endpoint, undefined, {
@@ -345,7 +345,6 @@ export async function servicelyApiRequestAllItems(
     }
     page += 1;
   }
-  /* eslint-enable no-await-in-loop */
 }
 
 // ---------------------------------------------------------------------------
@@ -452,6 +451,7 @@ export function parseAdvancedQuery(raw: string | IDataObject | undefined): Servi
   try {
     return JSON.parse(raw) as ServicelyQuery;
   } catch (error) {
+    // eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- a pure parser with no node context; router.ts wraps whatever an operation throws in a NodeOperationError carrying the node
     throw new Error(`Invalid Query JSON: ${(error as Error).message}`);
   }
 }

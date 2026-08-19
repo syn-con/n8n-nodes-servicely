@@ -37,6 +37,7 @@ function decodeSegment(segment: string, what: string): IDataObject {
 	try {
 		decoded = JSON.parse(Buffer.from(segment, 'base64url').toString('utf8'));
 	} catch {
+		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- this module has no node context; authentication.ts turns these two types into a 403 and a NodeOperationError respectively
 		throw new JwtVerificationError(`the ${what} is not valid JSON`);
 	}
 	if (typeof decoded !== 'object' || decoded === null || Array.isArray(decoded)) {
@@ -67,6 +68,7 @@ function isSignatureValid(
 	try {
 		publicKey = createPublicKey(key);
 	} catch {
+		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- as above: no node context here, and the type is what tells a misconfiguration from a bad token
 		throw new JwtConfigurationError('The configured public key is not a valid PEM key');
 	}
 

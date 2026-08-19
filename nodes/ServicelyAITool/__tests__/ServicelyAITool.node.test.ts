@@ -129,6 +129,7 @@ describe('execute', () => {
 				responseHeaders: {
 					entries: [
 						{ name: 'X-Request-ID', value: 'abc' },
+						// eslint-disable-next-line n8n-nodes-base/node-param-display-name-excess-inner-whitespace, n8n-nodes-base/node-param-display-name-untrimmed -- the whitespace is the fixture: this row is the one the test expects to be dropped
 						{ name: '  ', value: 'dropped' },
 						{ name: 'X-Empty' },
 					],

@@ -90,7 +90,7 @@ export async function router(this: IExecuteFunctions): Promise<INodeExecutionDat
     );
   }
 
-  /* eslint-disable no-await-in-loop -- input items are processed sequentially */
+  // Input items are processed sequentially
   for (let i = 0; i < items.length; i++) {
     try {
       returnData.push(...(await action.execute.call(this, i)));
@@ -104,7 +104,6 @@ export async function router(this: IExecuteFunctions): Promise<INodeExecutionDat
         : new NodeOperationError(this.getNode(), error as Error, { itemIndex: i });
     }
   }
-  /* eslint-enable no-await-in-loop */
 
   return [returnData];
 }

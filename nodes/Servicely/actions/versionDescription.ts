@@ -27,7 +27,6 @@ export const versionDescription: INodeTypeDescription = {
   documentationUrl: 'https://docs-servicely.atlassian.net/wiki/spaces/SD/pages/2077523978',
   defaults: { name: 'Servicely' },
   inputs: [NodeConnectionTypes.Main],
-  // eslint-disable-next-line n8n-nodes-base/node-class-description-outputs-wrong -- the rule counts array literals and cannot see through the enum, which is the current n8n spelling of 'main'
   outputs: [NodeConnectionTypes.Main],
   credentials: [{ name: 'servicelyApi', required: true }],
   properties: [

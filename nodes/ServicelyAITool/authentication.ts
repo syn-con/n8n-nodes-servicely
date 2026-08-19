@@ -135,11 +135,13 @@ function authenticateJwt(context: IWebhookFunctions, credential: AuthCredential)
 		return verifyJwt(token, { algorithm: credential.algorithm ?? 'HS256', key });
 	} catch (error) {
 		if (error instanceof JwtVerificationError) {
+			// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- carries the HTTP status the webhook answers the caller with; a NodeApiError would make it a 500
 			throw new WebhookAuthorizationError(403, `Invalid JWT: ${error.message}`);
 		}
 		if (error instanceof JwtConfigurationError) {
 			throw new NodeOperationError(context.getNode(), error.message);
 		}
+		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- an error this handler does not recognise reaches the caller unchanged rather than as a JWT failure
 		throw error;
 	}
 }

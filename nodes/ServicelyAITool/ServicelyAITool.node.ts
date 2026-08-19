@@ -57,7 +57,6 @@ export class ServicelyAITool implements INodeType {
 		defaults: {
 			name: RESPONSE_DISPLAY_NAME,
 		},
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-inputs-wrong-regular-node -- the rule counts array literals and cannot see through the enum, which is the current n8n spelling of 'main'
 		inputs: [NodeConnectionTypes.Main],
 		outputs: [NodeConnectionTypes.Main],
 		// This node only makes sense inside a workflow started by a tool call, not as a tool

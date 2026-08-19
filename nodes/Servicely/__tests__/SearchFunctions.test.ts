@@ -290,6 +290,7 @@ describe('getAiAgents', () => {
     ]);
 
     await expect(getAiAgents.call(ctx as ILoadOptionsFunctions)).resolves.toEqual([
+      // eslint-disable-next-line n8n-nodes-base/node-param-display-name-miscased -- a record id in an expected loadOptions result, not a display name
       { name: 'a1', value: 'a1' },
     ]);
   });
@@ -386,6 +387,7 @@ describe('record pickers', () => {
 
     const result = await searchParentRecords.call(ctx as ILoadOptionsFunctions);
 
+    // eslint-disable-next-line n8n-nodes-base/node-param-display-name-miscased -- a record id in an expected search result, not a display name
     expect(result.results).toEqual([{ name: 'r1', value: 'r1' }]);
   });
 
