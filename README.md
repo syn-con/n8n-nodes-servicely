@@ -1,5 +1,9 @@
 # n8n-nodes-servicely
 
+[![NPM Version](https://img.shields.io/npm/v/@synergyconsulting/n8n-nodes-servicely?style=flat-square)](https://www.npmjs.com/package/@synergyconsulting/n8n-nodes-servicely)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+
+
 An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform. It talks to the Servicely JSON REST API (v1) so your workflows can read and write records on any table (Incident, Request, User, Group, …), manage file attachments, run a full-text Global Search, and call instance controllers directly. A companion **Servicely Trigger** node starts workflows on a schedule by dequeuing async-queue messages or polling a table by filter, and the **Servicely AI Agent Tool** pair exposes a workflow as a tool the service desk agent can call.
 
 [Installation](#installation) · [Credentials](#credentials) · [Operations](#operations) · [Trigger](#trigger) · [AI Agent Tool](#ai-agent-tool) · [Examples](#examples) · [Compatibility](#compatibility) · [Development](#development)
