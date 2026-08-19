@@ -143,7 +143,7 @@ export class ServicelyAIToolTrigger implements INodeType {
 				},
 				default: {},
 				description:
-					'The arguments of the tool. They are exported with it and every request is validated against them: a required argument has to be sent, and any argument that is sent has to have the declared type. A boolean IsProduction is always exported on top of these — the agent sends true unless it was asked for a test run — but it is not validated, so a call that omits it still runs. Declaring one here replaces it, and then it is validated like any other.',
+					'The arguments of the tool. They are exported with it and every request is validated against them: a required argument has to be sent, and any argument that is sent has to have the declared type. A boolean IsLiveRun is always exported on top of these — the agent sends true unless it was asked for a test run — but it is not validated, so a call that omits it still runs. Declaring one here replaces it, and then it is validated like any other.',
 				options: [
 					{
 						name: 'values',
@@ -302,7 +302,7 @@ export class ServicelyAIToolTrigger implements INodeType {
 						},
 						default: DEFAULT_EXECUTION_SCRIPT,
 						description:
-							'Script the service desk runs when the agent calls this tool. Exported with it. Add this option only to replace the default script, which posts the call\'s parameters to this workflow and answers with what it returns. Every "@@URL@@" is replaced with this tool\'s webhook URL when the workflow is activated, so the script does not have to be edited when it moves between instances — quoted for you, unless you quoted the placeholder yourself.',
+							'Script the service desk runs when the agent calls this tool. Exported with it. Add this option only to replace the default script, which posts the call\'s parameters to this workflow and answers with what it returns. Every "@@WEBHOOK_URL@@" is replaced with this tool\'s webhook URL when the workflow is activated, so the script does not have to be edited when it moves between instances — quoted for you, unless you quoted the placeholder yourself.',
 					},
 					{
 						displayName: 'Mutates Ticket',

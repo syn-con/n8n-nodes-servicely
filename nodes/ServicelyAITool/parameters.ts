@@ -32,16 +32,17 @@ export const DEFAULT_RESPONSE_TIMEOUT_SECONDS = 60;
  * does nothing — so it is a default rather than an empty box, and the node only
  * has to say something here to do something *else*.
  *
- * `@@URL@@` is resolved at registration (see `registration.ts`); the script quotes
- * it itself, so it is left as the one string it already is. The `IsProduction`
- * flag every tool declares picks the endpoint and is then dropped from the
- * payload, so the workflow is not handed a parameter about its own plumbing.
+ * `@@WEBHOOK_URL@@` is resolved at registration (see `registration.ts`); the
+ * script quotes it itself, so it is left as the one string it already is. The
+ * `IsLiveRun` flag every tool declares picks the endpoint and is then dropped
+ * from the payload, so the workflow is not handed a parameter about its own
+ * plumbing.
  */
-export const DEFAULT_EXECUTION_SCRIPT = `let url = '@@URL@@';
-if (!parameters.IsProduction) {
+export const DEFAULT_EXECUTION_SCRIPT = `let url = '@@WEBHOOK_URL@@';
+if (!parameters.IsLiveRun) {
     url = url.replace("webhook", "webhook-test");
 }
-delete parameters.IsProduction;
+delete parameters.IsLiveRun;
 let payload;
 if (typeof parameters === "string") {
     payload = JSON.parse(parameters) || {};
@@ -51,7 +52,7 @@ if (typeof parameters === "string") {
 const response = HTTP.post(url)
     .accept("application/json")
     .body(JSON.stringify(payload))
-    .apiTokenAuth("n8n-demo-webhook")
+    .apiTokenAuth("n8n-webhook")
     .execute();
 const code = response.code;
 const body = response.getBody();
@@ -63,7 +64,7 @@ answer = {
 
 /**
  * The flag every tool carries on top of what the node declares, so a workflow can
- * tell a real call from a rehearsal without each tool having to define it. The
+ * tell a live call from a rehearsal without each tool having to define it. The
  * description is what the agent reads when it decides what to send, so it states
  * the default outright: true unless the person asked for a test run.
  *
@@ -73,11 +74,11 @@ answer = {
  * It is exported but not validated: no tool asked for it, so a caller that has not
  * caught up with the definition is not worth rejecting over it.
  */
-export const PRODUCTION_PARAMETER: ParameterDefinition = {
-	key: 'IsProduction',
+export const LIVE_RUN_PARAMETER: ParameterDefinition = {
+	key: 'IsLiveRun',
 	type: 'boolean',
 	description:
-		'Whether this call is for real. Always send true, unless the user explicitly asked to run in test mode — then send false.',
+		'Whether this call should really run. Always send true, unless the user explicitly asked to run in test mode — then send false.',
 	skipValidation: true,
 };
 
@@ -90,7 +91,7 @@ type ParameterContext = Pick<IHookFunctions, 'getNode' | 'getNodeParameter'>;
 
 /**
  * The tool's parameters, in the order the node declares them, with
- * {@link PRODUCTION_PARAMETER} appended — last, so adding it to a tool that is
+ * {@link LIVE_RUN_PARAMETER} appended — last, so adding it to a tool that is
  * already registered leaves the order of everything else alone.
  *
  * @throws {NodeOperationError} on a row with no name, a duplicate name, or a type
@@ -135,8 +136,8 @@ export function readParameterDefinitions(context: ParameterContext): ParameterDe
 		});
 	}
 
-	if (!seen.has(PRODUCTION_PARAMETER.key)) {
-		definitions.push(PRODUCTION_PARAMETER);
+	if (!seen.has(LIVE_RUN_PARAMETER.key)) {
+		definitions.push(LIVE_RUN_PARAMETER);
 	}
 
 	return definitions;

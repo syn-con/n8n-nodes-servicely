@@ -306,25 +306,25 @@ describe('validation', () => {
 			params: {
 				parameters: { values: [parameterRow('count', 'integer', 'How many')] },
 			},
-			body: { count: 2, IsProduction: true, extra: 'kept in body' },
+			body: { count: 2, IsLiveRun: true, extra: 'kept in body' },
 		});
 
 		expect(response.headersSent).toBe(false);
 		const [[item]] = result.workflowData as [[{ json: IDataObject }]];
-		expect(item.json.parameters).toEqual({ count: 2, IsProduction: true });
-		expect(item.json.body).toEqual({ count: 2, IsProduction: true, extra: 'kept in body' });
+		expect(item.json.parameters).toEqual({ count: 2, IsLiveRun: true });
+		expect(item.json.body).toEqual({ count: 2, IsLiveRun: true, extra: 'kept in body' });
 		expect(item.json.validation).toEqual({ valid: true, errors: [] });
 	});
 
 	it('defaults an unset parameter type to string', async () => {
 		const { result } = await webhook({
 			params: { parameters: { values: [parameterRow('who')] } },
-			body: { who: 'ada', IsProduction: false },
+			body: { who: 'ada', IsLiveRun: false },
 		});
 
 		expect((result.workflowData as [[{ json: IDataObject }]])[0][0].json.parameters).toEqual({
 			who: 'ada',
-			IsProduction: false,
+			IsLiveRun: false,
 		});
 	});
 
@@ -398,7 +398,7 @@ describe('validation', () => {
 	// Every tool carries it, so a workflow can tell a real call from a rehearsal
 	// without each tool having to declare it. It is exported but never validated:
 	// no tool asked for it, so a caller that has not caught up is not rejected.
-	it('runs a call that leaves IsProduction out', async () => {
+	it('runs a call that leaves IsLiveRun out', async () => {
 		const { result, response } = await webhook({
 			params: { parameters: { values: [parameterRow('count', 'integer')] } },
 			body: { count: 2 },
@@ -411,44 +411,44 @@ describe('validation', () => {
 		expect(item.json.parameters).toEqual({ count: 2 });
 	});
 
-	it('passes IsProduction on without holding it to its type', async () => {
-		const { result } = await webhook({ body: { IsProduction: 'yes' } });
+	it('passes IsLiveRun on without holding it to its type', async () => {
+		const { result } = await webhook({ body: { IsLiveRun: 'yes' } });
 
 		const [[item]] = result.workflowData as [[{ json: IDataObject }]];
 		expect(item.json.validation).toEqual({ valid: true, errors: [] });
-		expect(item.json.parameters).toEqual({ IsProduction: 'yes' });
+		expect(item.json.parameters).toEqual({ IsLiveRun: 'yes' });
 	});
 
-	it('coerces IsProduction when the node asks for coercion', async () => {
+	it('coerces IsLiveRun when the node asks for coercion', async () => {
 		const { result } = await webhook({
 			params: { options: { coerceTypes: true } },
-			body: { IsProduction: 'false' },
+			body: { IsLiveRun: 'false' },
 		});
 
 		const [[item]] = result.workflowData as [[{ json: IDataObject }]];
-		expect(item.json.parameters).toEqual({ IsProduction: false });
+		expect(item.json.parameters).toEqual({ IsLiveRun: false });
 	});
 
-	it('does not count IsProduction as an unknown parameter', async () => {
+	it('does not count IsLiveRun as an unknown parameter', async () => {
 		const { result } = await webhook({
 			params: { options: { allowUnknownParameters: false } },
-			body: { IsProduction: true },
+			body: { IsLiveRun: true },
 		});
 
 		const [[item]] = result.workflowData as [[{ json: IDataObject }]];
 		expect(item.json.validation).toEqual({ valid: true, errors: [] });
 	});
 
-	it('lets the node declare its own IsProduction instead', async () => {
+	it('lets the node declare its own IsLiveRun instead', async () => {
 		const { result } = await webhook({
 			params: {
-				parameters: { values: [parameterRow('IsProduction', 'string', 'The environment')] },
+				parameters: { values: [parameterRow('IsLiveRun', 'string', 'The environment')] },
 			},
-			body: { IsProduction: 'staging' },
+			body: { IsLiveRun: 'staging' },
 		});
 
 		const [[item]] = result.workflowData as [[{ json: IDataObject }]];
-		expect(item.json.parameters).toEqual({ IsProduction: 'staging' });
+		expect(item.json.parameters).toEqual({ IsLiveRun: 'staging' });
 	});
 
 	it('rejects a body that is not a JSON object', async () => {

@@ -88,16 +88,23 @@ const TOOL_HOLDERS = [
 
 type ToolHolder = (typeof TOOL_HOLDERS)[number];
 
-/** Stands in for this tool's webhook URL inside the Execution Script. */
-const URL_PLACEHOLDER = '@@URL@@';
+/**
+ * Stands in for this tool's webhook URL inside the Execution Script, documented
+ * spelling first. `@@URL@@` is what the placeholder was called before it said what
+ * it stood for; it is still resolved, and silently, since it sits in scripts that
+ * are already saved and one left alone would register a script that then fails on
+ * a literal placeholder.
+ */
+const URL_PLACEHOLDERS = ['@@WEBHOOK_URL@@', '@@URL@@'] as const;
 
 /**
- * The placeholder as it appears in a script: already inside a pair of matching
+ * Either placeholder as it appears in a script: already inside a pair of matching
  * quotes, or bare. The quoted form is matched first, so a script that quoted the
  * placeholder itself gets the URL put inside its quotes rather than a second pair
  * around them.
  */
-const URL_PLACEHOLDER_PATTERN = /(['"`])@@URL@@\1|@@URL@@/g;
+const SPELLINGS = URL_PLACEHOLDERS.join('|');
+const URL_PLACEHOLDER_PATTERN = new RegExp(`(['"\`])(?:${SPELLINGS})\\1|${SPELLINGS}`, 'g');
 
 /** The node's single webhook, as declared in its description. */
 const WEBHOOK_NAME = 'default';
@@ -130,12 +137,12 @@ function isTestRegistration(ctx: IHookFunctions): boolean {
  * The Execution Script as the service desk should hold it: the option's script —
  * or {@link DEFAULT_EXECUTION_SCRIPT} when the node does not give one, since a tool
  * with no script would be registered and then do nothing — with every
- * {@link URL_PLACEHOLDER} replaced by this tool's webhook URL, so a script can name
- * its own endpoint without being edited per instance.
+ * {@link URL_PLACEHOLDERS placeholder} replaced by this tool's webhook URL, so a
+ * script can name its own endpoint without being edited per instance.
  *
  * Always the *production* URL, even when a test listen is what triggered the
  * registration: the script decides at call time which endpoint it wants (the
- * default one rewrites the segment when `IsProduction` is false), so handing it a
+ * default one rewrites the segment when `IsLiveRun` is false), so handing it a
  * test URL would leave it deriving a test URL from a test URL.
  *
  * The URL is a string wherever it lands, so a bare placeholder is quoted on the
@@ -152,7 +159,7 @@ function executionScript(ctx: IHookFunctions): string {
 	// workflow is saved, so the default has to be the fallback rather than only the box
 	const written = String(configured ?? '');
 	const script = written.trim() === '' ? DEFAULT_EXECUTION_SCRIPT : written;
-	if (!script.includes(URL_PLACEHOLDER)) {
+	if (!URL_PLACEHOLDERS.some((placeholder) => script.includes(placeholder))) {
 		return script;
 	}
 
@@ -160,7 +167,7 @@ function executionScript(ctx: IHookFunctions): string {
 	if (!url) {
 		throw new NodeOperationError(
 			ctx.getNode(),
-			`The Execution Script uses ${URL_PLACEHOLDER}, but this tool's webhook URL could not be resolved`,
+			`The Execution Script uses ${URL_PLACEHOLDERS[0]}, but this tool's webhook URL could not be resolved`,
 			{ description: 'Give the node a fixed Path, save the workflow, and activate it again.' },
 		);
 	}
@@ -168,7 +175,8 @@ function executionScript(ctx: IHookFunctions): string {
 	const productionUrl = url.replace(TEST_URL_SEGMENT, PRODUCTION_URL_SEGMENT);
 
 	return script.replace(URL_PLACEHOLDER_PATTERN, (match) => {
-		const quote = match === URL_PLACEHOLDER ? "'" : match[0];
+		// A bare placeholder starts with its own delimiter; a quoted one, with the quote
+		const quote = match.startsWith('@@') ? "'" : match[0];
 		return `${quote}${productionUrl}${quote}`;
 	});
 }

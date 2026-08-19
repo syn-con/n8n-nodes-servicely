@@ -1,18 +1,18 @@
 import type { IDataObject, IHookFunctions } from 'n8n-workflow';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { DEFAULT_EXECUTION_SCRIPT, PRODUCTION_PARAMETER } from '../parameters';
+import { DEFAULT_EXECUTION_SCRIPT, LIVE_RUN_PARAMETER } from '../parameters';
 import { checkToolExists, createTool, deleteTool } from '../registration';
 
 /** The wording of the flag every tool carries, as the agent reads it. */
-const PRODUCTION_DESCRIPTION = PRODUCTION_PARAMETER.description;
+const LIVE_RUN_DESCRIPTION = LIVE_RUN_PARAMETER.description;
 
 /** The webhook URL the stub reports, which is what a script is registered with. */
 const WEBHOOK_URL = 'https://n8n.example.com/webhook/create-incident';
 
 /** The default script as it reaches the instance: its placeholder resolved. */
 const RESOLVED_DEFAULT_SCRIPT = DEFAULT_EXECUTION_SCRIPT.replace(
-	"'@@URL@@'",
+	"'@@WEBHOOK_URL@@'",
 	`'${WEBHOOK_URL}'`,
 );
 
@@ -315,7 +315,7 @@ describe('create', () => {
 
 		const { ExecutionScript } = ctx.calls[1].body as IDataObject;
 		expect(ExecutionScript).toBe(RESOLVED_DEFAULT_SCRIPT);
-		expect(ExecutionScript).not.toContain('@@URL@@');
+		expect(ExecutionScript).not.toContain('@@WEBHOOK_URL@@');
 		// The script quoted the placeholder itself, so no second pair was added
 		expect(ExecutionScript).toContain(`let url = '${WEBHOOK_URL}';`);
 	});
@@ -342,10 +342,10 @@ describe('create', () => {
 		expect(ctx.calls[1].body).toMatchObject({ ExecutionScript: 'servicely.log("called")' });
 	});
 
-	it("replaces @@URL@@ with the tool's quoted webhook URL, every time it appears", async () => {
+	it("replaces @@WEBHOOK_URL@@ with the tool's quoted webhook URL, every time it appears", async () => {
 		const ctx = makeHookCtx({
 			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
-			params: { options: { executionScript: 'post(@@URL@@); retry(@@URL@@)' } },
+			params: { options: { executionScript: 'post(@@WEBHOOK_URL@@); retry(@@WEBHOOK_URL@@)' } },
 		});
 
 		await createTool.call(ctx);
@@ -356,11 +356,41 @@ describe('create', () => {
 		});
 	});
 
+	// Scripts saved before the placeholder said what it stood for are already out
+	// there, and one left unresolved would register and then fail on a literal
+	it('still resolves the legacy @@URL@@ spelling, quoted or bare', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
+			params: { options: { executionScript: "post('@@URL@@'); retry(@@URL@@)" } },
+		});
+
+		await createTool.call(ctx);
+
+		const url = 'https://n8n.example.com/webhook/create-incident';
+		expect(ctx.calls[1].body).toMatchObject({
+			ExecutionScript: `post('${url}'); retry('${url}')`,
+		});
+	});
+
+	it('resolves both spellings in one script', async () => {
+		const ctx = makeHookCtx({
+			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
+			params: { options: { executionScript: 'post(@@WEBHOOK_URL@@); retry(@@URL@@)' } },
+		});
+
+		await createTool.call(ctx);
+
+		const url = 'https://n8n.example.com/webhook/create-incident';
+		expect(ctx.calls[1].body).toMatchObject({
+			ExecutionScript: `post('${url}'); retry('${url}')`,
+		});
+	});
+
 	it('leaves the quotes alone when the script already quoted the placeholder', async () => {
 		const ctx = makeHookCtx({
 			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
 			params: {
-				options: { executionScript: "post('@@URL@@'); log(\"@@URL@@\"); retry(@@URL@@)" },
+				options: { executionScript: "post('@@WEBHOOK_URL@@'); log(\"@@WEBHOOK_URL@@\"); retry(@@WEBHOOK_URL@@)" },
 			},
 		});
 
@@ -379,7 +409,7 @@ describe('create', () => {
 			mode: 'manual',
 			webhookUrl: 'https://n8n.example.com/webhook-test/create-incident',
 			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
-			params: { options: { executionScript: 'post(@@URL@@)' } },
+			params: { options: { executionScript: 'post(@@WEBHOOK_URL@@)' } },
 		});
 
 		await createTool.call(ctx);
@@ -392,7 +422,7 @@ describe('create', () => {
 	it('refuses to register a script whose URL cannot be resolved', async () => {
 		const ctx = makeHookCtx({
 			webhookUrl: undefined,
-			params: { options: { executionScript: 'post(@@URL@@)' } },
+			params: { options: { executionScript: 'post(@@WEBHOOK_URL@@)' } },
 		});
 
 		await expect(createTool.call(ctx)).rejects.toThrow(
@@ -521,7 +551,7 @@ describe('create', () => {
 			'POST /v1/SystemAITool',
 			'GET /v1/SystemAITool',
 			'GET /v1/SystemAIToolParameter',
-			// The IsProduction row every tool gets
+			// The IsLiveRun row every tool gets
 			'POST /v1/SystemAIToolParameter',
 		]);
 	});
@@ -571,10 +601,10 @@ describe('parameter sync', () => {
 			Parent: 'tool-9',
 		});
 		// Appended last, so declaring a parameter later does not reorder it
-		expect(writes[3].body).toMatchObject({ Name: 'IsProduction', Type: 'boolean', Order: 30 });
+		expect(writes[3].body).toMatchObject({ Name: 'IsLiveRun', Type: 'boolean', Order: 30 });
 	});
 
-	it('writes the IsProduction row for a tool that declares nothing', async () => {
+	it('writes the IsLiveRun row for a tool that declares nothing', async () => {
 		const ctx = ctxFor([]);
 
 		await createTool.call(ctx);
@@ -582,10 +612,10 @@ describe('parameter sync', () => {
 		const writes = ctx.calls.filter((call) => call.method === 'POST');
 		expect(writes).toHaveLength(1);
 		expect(writes[0].body).toEqual({
-			Name: 'IsProduction',
+			Name: 'IsLiveRun',
 			Type: 'boolean',
 			Description:
-				'Whether this call is for real. Always send true, unless the user explicitly asked to run in test mode — then send false.',
+				'Whether this call should really run. Always send true, unless the user explicitly asked to run in test mode — then send false.',
 			Order: 10,
 			Parent: 'tool-9',
 		});
@@ -610,9 +640,9 @@ describe('parameter sync', () => {
 				{ id: 'p1', Name: 'ticketId', Type: 'string', Description: 'Which ticket', Order: 10 },
 				{
 					id: 'p2',
-					Name: 'IsProduction',
+					Name: 'IsLiveRun',
 					Type: 'boolean',
-					Description: PRODUCTION_DESCRIPTION,
+					Description: LIVE_RUN_DESCRIPTION,
 					Order: 20,
 				},
 			],
@@ -730,7 +760,7 @@ describe('parameter sync', () => {
 				ok([TOOL]),
 				ok(TOOL),
 				ok([{ id: 'p1', Name: 'dropped', Type: 'string', Order: 10 }]),
-				// The IsProduction row is written before anything stale is removed
+				// The IsLiveRun row is written before anything stale is removed
 				ok({ id: 'p2' }),
 				notFound,
 			],
