@@ -3,6 +3,7 @@ import { createHash, createHmac } from 'crypto';
 import type {
   Icon,
   ICredentialDataDecryptedObject,
+  ICredentialTestRequest,
   ICredentialType,
   IDataObject,
   IHttpRequestOptions,
@@ -146,6 +147,24 @@ export class ServicelyApi implements ICredentialType {
       description: 'Shared secret used to sign requests with HMAC-SHA256',
     },
   ];
+
+  /**
+   * What the credential's **Test** button sends: one row of the table registry.
+   * It is the smallest authenticated read every instance answers, and the same
+   * table the Table pickers list, so a credential that passes here is one the
+   * nodes can work with.
+   *
+   * {@link authenticate} runs first, which is what makes one request enough for
+   * all three methods — the HMAC signature is computed over this request like any
+   * other, and `baseURL` comes from the Instance URL, so only the path is named.
+   */
+  test: ICredentialTestRequest = {
+    request: {
+      method: 'GET',
+      url: '/v1/TableDefinition',
+      qs: { page: 1, page_size: 1 },
+    },
+  };
 
   /**
    * Applied by n8n to every request the nodes make through

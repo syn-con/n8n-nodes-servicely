@@ -40,6 +40,7 @@
     ]
   },
   "scripts": {
+    "prebuild": "node -e \"const {rmSync}=require('fs'); for (const dir of ['dist','coverage']) rmSync(dir,{recursive:true,force:true})\"",
     "build": "n8n-node build",
     "build:watch": "n8n-node dev --external-n8n",
     "dev": "n8n-node dev",

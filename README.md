@@ -384,4 +384,4 @@ resource's `index.ts` (export + selector option), and add it to `node.type.ts`.
 
 ## License
 
-MIT
+[MIT](LICENSE.md)
