@@ -19,7 +19,7 @@
     "url": "https://github.com/syn-con/n8n-nodes-servicely/issues"
   },
   "engines": {
-    "node": ">=20.15"
+    "node": ">=22.0"
   },
   "main": "dist/index.js",
   "files": [
