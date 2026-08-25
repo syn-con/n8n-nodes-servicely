@@ -28,6 +28,14 @@ export interface ParameterDefinition {
 	 * when it is there, so the workflow decides what its absence means.
 	 */
 	skipValidation?: boolean;
+	/**
+	 * Kept out of the tool's registered parameters while still being declared here:
+	 * the service desk's Execution Script is what sends it, not the agent, so
+	 * exporting it would offer the agent an argument it has no business filling in —
+	 * and leaving it undeclared would have the webhook treat what the script sends
+	 * as an unknown parameter.
+	 */
+	skipExport?: boolean;
 }
 
 export interface ValidationError {

@@ -19,7 +19,7 @@ import {
 	checkAuthCredential,
 	WebhookAuthorizationError,
 } from './authentication';
-import { DEFAULT_EXECUTION_SCRIPT, readParameterDefinitions } from './parameters';
+import { executionScriptOption, readParameterDefinitions } from './parameters';
 import {
 	AUTH_DISPLAY_NAME,
 	DOCUMENTATION_URL,
@@ -153,14 +153,17 @@ export class ServicelyAIToolTrigger implements INodeType {
 				},
 				default: {},
 				description:
-					'The arguments of the tool. They are exported with it and every request is validated against them: a required argument has to be sent, and any argument that is sent has to have the declared type. A boolean IsLiveRun is always exported on top of these — the agent sends true unless it was asked for a test run — but it is not validated, so a call that omits it still runs. Declaring one here replaces it, and then it is validated like any other.',
+					'The arguments of the tool. They are exported with it and every request is validated against them: a required argument has to be sent, and any argument that is sent has to have the declared type. From Script keeps one out of the exported tool while still validating it: the Execution Script sends that value — the signed-in Servicely user — not the agent. A boolean IsLiveRun is always exported on top of these — the agent sends true unless it was asked for a test run — but it is not validated, so a call that omits it still runs. Declaring one here replaces it, and then it is validated like any other.',
 				options: [
 					{
 						name: 'values',
 						displayName: 'Parameter',
+						// Alphabetical by displayName, which is what the n8n lint rules ask of a
+						// section with five or more fields — not the order a row is filled in
+						// eslint-disable-next-line n8n-nodes-base/node-param-fixed-collection-type-unsorted-items -- filled in top to bottom, not alphabetically
 						values: [
 							{
-								displayName: 'Param Name',
+								displayName: 'Name',
 								name: 'paramName',
 								type: 'string',
 								noDataExpression: true,
@@ -170,7 +173,7 @@ export class ServicelyAIToolTrigger implements INodeType {
 								required: true,
 							},
 							{
-								displayName: 'Param Type',
+								displayName: 'Type',
 								name: 'paramType',
 								type: 'options',
 								noDataExpression: true,
@@ -200,7 +203,28 @@ export class ServicelyAIToolTrigger implements INodeType {
 								description: 'The type the value must have. Defaults to String.',
 							},
 							{
-								displayName: 'Param Required',
+								displayName: 'From Script',
+								name: 'paramFromScript',
+								type: 'boolean',
+								noDataExpression: true,
+								default: false,
+								description:
+									'Whether the value comes from the Execution Script instead of the agent. The parameter is then not created as a tool parameter, so the agent is never offered it, and the default script sends the signed-in Servicely user for it — their email address, or their username when the account has no email — refusing a call from a user it cannot name. Keep such a parameter typed String, since that is what the script assigns. It is still validated here like any other parameter, and never counts as unknown when Allow Unknown Parameters is off.',
+							},
+							{
+								displayName: 'Description',
+								name: 'paramDescription',
+								type: 'string',
+								noDataExpression: true,
+								default: '',
+								placeholder: 'e.g. ID of the customer the incident is raised for',
+								// Nothing exports a parameter the script fills in, so there is nothing for a
+								// description of it to reach
+								displayOptions: { hide: { paramFromScript: [true] } },
+								description: 'What this argument means. Exported with the tool.',
+							},
+							{
+								displayName: 'Required',
 								name: 'paramRequired',
 								type: 'boolean',
 								noDataExpression: true,
@@ -211,15 +235,6 @@ export class ServicelyAIToolTrigger implements INodeType {
 								default: true,
 								description:
 									'Whether a call has to send this argument. Turn it off and a call that leaves it out still runs; one that does send it still has to send the declared type. This is checked here only — the tool is exported with the argument either way.',
-							},
-							{
-								displayName: 'Param Description',
-								name: 'paramDescription',
-								type: 'string',
-								noDataExpression: true,
-								default: '',
-								placeholder: 'e.g. ID of the customer the incident is raised for',
-								description: 'What this argument means. Exported with the tool.',
 							},
 						],
 					},
@@ -300,20 +315,9 @@ export class ServicelyAIToolTrigger implements INodeType {
 						description:
 							'Whether values are converted to the defined type before validation, e.g. the string "12" to the number 12. Useful for form encoded bodies.',
 					},
-					{
-						displayName: 'Execution Script',
-						name: 'executionScript',
-						type: 'string',
-						noDataExpression: true,
-						typeOptions: {
-							rows: 12,
-							editor: 'jsEditor',
-							editorLanguage: 'javaScript',
-						},
-						default: DEFAULT_EXECUTION_SCRIPT,
-						description:
-							'Script the service desk runs when the agent calls this tool. Exported with it. Add this option only to replace the default script, which posts the call\'s parameters to this workflow and answers with what it returns. Every "@@WEBHOOK_URL@@" is replaced with this tool\'s webhook URL when the workflow is activated, so the script does not have to be edited when it moves between instances — quoted for you, unless you quoted the placeholder yourself.',
-					},
+					// The script, and its default, declared next to the script text — see
+					// `parameters.ts`
+					executionScriptOption,
 					{
 						displayName: 'Mutates Ticket',
 						name: 'mutatesTicket',

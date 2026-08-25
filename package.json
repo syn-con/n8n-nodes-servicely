@@ -1,6 +1,6 @@
 {
   "name": "@synergyconsulting/n8n-nodes-servicely",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "n8n community node for the Servicely ITSM/ESM JSON REST API (v1)",
   "keywords": [
     "n8n-community-node-package"

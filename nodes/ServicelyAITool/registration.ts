@@ -10,7 +10,7 @@ import {
 import type { ServicelyRecord } from '../Servicely/types';
 import { toolDescription, toolKey, toolName } from './identity';
 import {
-	DEFAULT_EXECUTION_SCRIPT,
+	readExecutionScript,
 	readParameterDefinitions,
 	readToolTimeoutSeconds,
 } from './parameters';
@@ -135,9 +135,8 @@ function isTestRegistration(ctx: IHookFunctions): boolean {
 }
 
 /**
- * The Execution Script as the service desk should hold it: the option's script —
- * or {@link DEFAULT_EXECUTION_SCRIPT} when the node does not give one, since a tool
- * with no script would be registered and then do nothing — with every
+ * The Execution Script as the service desk should hold it: whichever script
+ * {@link readExecutionScript} settles on, with every
  * {@link URL_PLACEHOLDERS placeholder} replaced by this tool's webhook URL, so a
  * script can name its own endpoint without being edited per instance.
  *
@@ -153,13 +152,7 @@ function isTestRegistration(ctx: IHookFunctions): boolean {
  * @throws {NodeOperationError} when the script asks for a URL n8n cannot resolve
  */
 function executionScript(ctx: IHookFunctions): string {
-	const { executionScript: configured } = ctx.getNodeParameter('options', {}) as {
-		executionScript?: string;
-	};
-	// Blank counts as "not given": n8n drops an option left at its default when the
-	// workflow is saved, so the default has to be the fallback rather than only the box
-	const written = String(configured ?? '');
-	const script = written.trim() === '' ? DEFAULT_EXECUTION_SCRIPT : written;
+	const script = readExecutionScript(ctx);
 	if (!URL_PLACEHOLDERS.some((placeholder) => script.includes(placeholder))) {
 		return script;
 	}
@@ -349,12 +342,19 @@ function parameterMatches(row: ServicelyRecord, fields: IDataObject): boolean {
  *
  * `Order` is assigned from the declared order rather than read from the rows, which
  * is what lets reordering the collection in n8n reorder the tool's arguments.
+ *
+ * A definition marked `skipExport` is not one of the node's arguments — the service
+ * desk's own script fills it in, so the agent is never offered it — and it is
+ * dropped here rather than at the reader, which keeps the webhook validating it and
+ * keeps the `Order` of the rows that *are* written unbroken. A row left behind by a
+ * parameter that used to be exported is deleted like any other.
  */
 async function syncParameters(
 	ctx: IHookFunctions,
 	toolId: string,
-	definitions: ParameterDefinition[],
+	declared: ParameterDefinition[],
 ): Promise<void> {
+	const definitions = declared.filter((definition) => !definition.skipExport);
 	const stale = new Map<string, ServicelyRecord>();
 	for (const row of await listParameters(ctx, toolId)) {
 		const name = typeof row.Name === 'string' ? row.Name.trim() : '';
