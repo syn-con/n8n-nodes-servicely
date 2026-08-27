@@ -1,5 +1,6 @@
 import { type IExecuteFunctions, type INodeExecutionData, NodeError, NodeOperationError } from 'n8n-workflow';
 
+import * as aiAgentTool from './aiAgentTool';
 import * as attachment from './attachment';
 import * as controller from './controller';
 import * as globalSearch from './globalSearch';
@@ -30,6 +31,8 @@ function actionFor(servicely: Servicely): Action | undefined {
       return controller[servicely.operation];
     case 'globalSearch':
       return globalSearch[servicely.operation];
+    case 'aiAgentTool':
+      return aiAgentTool[servicely.operation];
     default:
       return undefined;
   }

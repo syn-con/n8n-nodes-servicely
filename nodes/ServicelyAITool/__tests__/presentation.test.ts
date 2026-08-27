@@ -1,93 +1,89 @@
 import type { INodePropertyOptions } from 'n8n-workflow';
 import { describe, expect, it } from 'vitest';
 
+import { Servicely } from '../../Servicely/Servicely.node';
 import {
 	AUTH_DISPLAY_NAME,
 	DOCUMENTATION_URL,
-	RESPONSE_DISPLAY_NAME,
-	SEND_RESPONSE_ACTION,
+	RESPONSE_NODE_TYPE,
+	RESPONSE_RESOURCE,
 	TOOL_CODEX,
 	TOOL_DISPLAY_NAME,
-	TOOL_NODE_TYPE,
 	TRIGGER_DISPLAY_NAME,
 	TRIGGER_NODE_TYPE,
 } from '../presentation';
-import { ServicelyAITool } from '../ServicelyAITool.node';
 import { ServicelyAIToolTrigger } from '../ServicelyAIToolTrigger.node';
 
-const tool = new ServicelyAITool().description;
+const action = new Servicely().description;
 const trigger = new ServicelyAIToolTrigger().description;
 
-/**
- * What n8n's node creator does to decide whether a trigger belongs to an app's
- * card (`useActionsGeneration.ts`): the trigger's type with "Trigger" taken out
- * has to be the app's type, and the app has to have at least one action.
- */
-const normalizeName = (name: string) => name.replace('Trigger', '');
-
-/** The Actions the card lists for a node: its `operation` options. */
-function actions(properties: typeof tool.properties): string[] {
-	const operation = properties.find((property) => property.name?.toLowerCase() === 'operation');
-	return ((operation?.options ?? []) as INodePropertyOptions[]).map(
-		(option) => option.action ?? option.name,
-	);
+/** The options of a selector, by name. */
+function options(name: string): INodePropertyOptions[] {
+	const property = action.properties.find((candidate) => candidate.name === name);
+	return (property?.options ?? []) as INodePropertyOptions[];
 }
 
-describe('the one card the editor shows', () => {
-	// The whole point of the naming: one entry in the search, holding both halves
-	it('names the trigger so the editor merges it into the tool card', () => {
-		expect(normalizeName(TRIGGER_NODE_TYPE)).toBe(TOOL_NODE_TYPE);
+describe('how the AI Agent Tool presents itself', () => {
+	// The half that answers is a resource of the action node, not a node of its
+	// own — n8n verification allows a package only one regular node.
+	it('carries the answer on the action node', () => {
+		expect(action.name).toBe(RESPONSE_NODE_TYPE);
+		expect(action.group).not.toContain('trigger');
+
+		const resource = options('resource').find((option) => option.value === RESPONSE_RESOURCE);
+		expect(resource?.name).toBe('AI Agent Tool');
+	});
+
+	it('offers Send Response as the resource operation', () => {
+		const operation = action.properties.find(
+			(property) =>
+				property.name === 'operation' &&
+				property.displayOptions?.show?.resource?.includes(RESPONSE_RESOURCE),
+		);
+		const values = ((operation?.options ?? []) as INodePropertyOptions[]).map(
+			(option) => option.value,
+		);
+
+		expect(values).toEqual(['sendResponse']);
+	});
+
+	// The trigger's type is what a saved workflow names and what a registered tool
+	// record points at, so it survived the move unchanged.
+	it('keeps the trigger type it has had since 0.7.0', () => {
+		expect(TRIGGER_NODE_TYPE).toBe('servicelyAiAgentToolTrigger');
 		expect(trigger.name).toBe(TRIGGER_NODE_TYPE);
-		expect(tool.name).toBe(TOOL_NODE_TYPE);
-		// The merge only happens for a trigger, into a node that is not one
 		expect(trigger.group).toContain('trigger');
-		expect(tool.group).not.toContain('trigger');
-	});
-
-	// An app with no actions is not merged into, so the operation is what holds the
-	// card together — not decoration.
-	it('lists Send a response as the card action', () => {
-		expect(actions(tool.properties)).toEqual([SEND_RESPONSE_ACTION]);
-	});
-
-	// `operationsCategory` gives up and defers to the resource path if it finds one
-	it('declares no resource, which would hide the operation', () => {
-		expect(tool.properties.some((property) => property.name === 'resource')).toBe(false);
 	});
 
 	// `triggersCategory` returns nothing at all for a display name without it
 	it('says "Trigger" in the trigger display name', () => {
 		expect(TRIGGER_DISPLAY_NAME.toLowerCase()).toContain('trigger');
 		expect(trigger.displayName).toBe(TRIGGER_DISPLAY_NAME);
-		// The card takes the app's name, so that one must not say "Trigger"
-		expect(tool.displayName).toBe(TOOL_DISPLAY_NAME);
+	});
+
+	// The canvas is not the panel: the name the trigger drops is what the tool
+	// registers under, and the service desk shows it to the people using the agent.
+	it('keeps the registered tool name free of "Trigger"', () => {
+		expect(trigger.defaults.name).toBe(TOOL_DISPLAY_NAME);
 		expect(TOOL_DISPLAY_NAME.toLowerCase()).not.toContain('trigger');
 	});
 
-	// The canvas is not the panel: the node dropped from the Triggers half is the
-	// tool itself, and its name is what the tool registers under.
-	it('keeps the canvas names, and the registered tool name, free of "Trigger"', () => {
-		expect(trigger.defaults.name).toBe(TOOL_DISPLAY_NAME);
-		expect(tool.defaults.name).toBe(RESPONSE_DISPLAY_NAME);
-	});
-
-	it('files and documents both halves as one', () => {
-		expect(tool.codex).toBe(TOOL_CODEX);
+	it('documents the trigger where the resource is documented', () => {
 		expect(trigger.codex).toBe(TOOL_CODEX);
-		expect(tool.documentationUrl).toBe(DOCUMENTATION_URL);
 		expect(trigger.documentationUrl).toBe(DOCUMENTATION_URL);
 		expect(TOOL_CODEX.resources?.primaryDocumentation).toEqual([{ url: DOCUMENTATION_URL }]);
 	});
 
-	// A search for either half has to turn up the card
-	it('answers the same searches for both halves', () => {
+	// Nothing merges the two halves into one card any more, so the searches a
+	// person makes for either have to turn the trigger up.
+	it('answers the searches made for either half', () => {
 		expect(TOOL_CODEX.alias).toContain('Servicely');
 		expect(TOOL_CODEX.alias).toContain('Agent');
 		expect(TOOL_CODEX.alias).toContain('Response');
 	});
 
 	// The AI sections of the panel mean "a node an n8n agent can call", which is the
-	// mirror image of what these do.
+	// mirror image of what this does.
 	it('stays out of the AI subcategories', () => {
 		expect(TOOL_CODEX.subcategories).toBeUndefined();
 		expect(TOOL_CODEX.categories).not.toContain('AI');

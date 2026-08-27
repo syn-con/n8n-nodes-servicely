@@ -1,6 +1,7 @@
 import type { INodeProperties } from 'n8n-workflow';
 import { describe, expect, it } from 'vitest';
 
+import * as aiAgentTool from '../actions/aiAgentTool';
 import * as attachment from '../actions/attachment';
 import * as controller from '../actions/controller';
 import * as globalSearch from '../actions/globalSearch';
@@ -15,7 +16,7 @@ import { listSearchMethods } from '../SearchFunctions';
  * property tree and the router would silently disagree.
  */
 
-const RESOURCES = { object, attachment, globalSearch, queue, controller };
+const RESOURCES = { object, attachment, globalSearch, queue, controller, aiAgentTool };
 
 /**
  * Operation values a resource still answers to under an older name, mapped to the

@@ -12,22 +12,34 @@ import {
 } from '../response';
 
 /**
- * The node types a response node can arrive as: the package prefix n8n gives a
- * community node, an installation under another package name, and the bare name a
- * test fixture uses.
+ * The node types the Servicely action node can arrive as: the package prefix n8n
+ * gives a community node, an installation under another package name, and the
+ * bare name a test fixture uses.
  */
-const RESPONSE_NODE_TYPES = [
-	'@synergyconsulting/n8n-nodes-servicely.servicelyAiAgentTool',
-	'CUSTOM.servicelyAiAgentTool',
-	'servicelyAiAgentTool',
+const ACTION_NODE_TYPES = [
+	'@synergyconsulting/n8n-nodes-servicely.servicely',
+	'CUSTOM.servicely',
+	'servicely',
 ];
 
-function makeContext(responseMode: string, childTypes: string[]) {
+/** A downstream node, as `getChildNodes` hands it over. */
+type Child = { type: string; parameters?: Record<string, unknown> };
+
+/** The Servicely node set to the resource that answers a tool call. */
+function responder(type: string): Child {
+	return { type, parameters: { resource: 'aiAgentTool', operation: 'sendResponse' } };
+}
+
+/** Every way the responder can be spelled, for the cases that want all of them. */
+const RESPONDERS = ACTION_NODE_TYPES.map(responder);
+
+function makeContext(responseMode: string, children: Child[]) {
 	return {
 		getNodeParameter: (name: string, fallback?: unknown) =>
 			name === 'responseMode' ? responseMode : fallback,
 		getNode: () => ({ name: 'Servicely AI Agent Tool', type: 'servicelyAiAgentToolTrigger' }),
-		getChildNodes: () => childTypes.map((type, index) => ({ name: `n${index}`, type })),
+		getChildNodes: () =>
+			children.map((child, index) => ({ name: `n${index}`, ...child })),
 	} as unknown as IWebhookFunctions;
 }
 
@@ -171,52 +183,97 @@ describe('the Respond properties', () => {
 describe('checkResponseModeConfiguration', () => {
 	it('lets a workflow whose wiring matches its Respond setting through', () => {
 		expect(() =>
-			checkResponseModeConfiguration(makeContext('responseNode', RESPONSE_NODE_TYPES)),
+			checkResponseModeConfiguration(makeContext('responseNode', RESPONDERS)),
 		).not.toThrow();
 		expect(() =>
-			checkResponseModeConfiguration(makeContext('onReceived', ['n8n-nodes-base.set'])),
+			checkResponseModeConfiguration(makeContext('onReceived', [{ type: 'n8n-nodes-base.set' }])),
 		).not.toThrow();
 	});
 
-	it('refuses to answer from a response node the workflow does not have', () => {
+	it('refuses to answer from a responder the workflow does not have', () => {
 		expect(() =>
-			checkResponseModeConfiguration(makeContext('responseNode', ['n8n-nodes-base.set'])),
-		).toThrow('No Servicely AI Agent Tool Response node found in the workflow');
+			checkResponseModeConfiguration(
+				makeContext('responseNode', [{ type: 'n8n-nodes-base.set' }]),
+			),
+		).toThrow('No Servicely node set to "AI Agent Tool" found in the workflow');
 	});
 
-	it('refuses a response node that would never get to respond', () => {
+	it('refuses a responder that would never get to respond', () => {
 		for (const mode of ['onReceived', 'lastNode']) {
-			expect(() =>
-				checkResponseModeConfiguration(makeContext(mode, RESPONSE_NODE_TYPES)),
-			).toThrow('Unused Servicely AI Agent Tool Response node found in the workflow');
+			expect(() => checkResponseModeConfiguration(makeContext(mode, RESPONDERS))).toThrow(
+				'Unused Servicely node set to "AI Agent Tool" found in the workflow',
+			);
 		}
 	});
 
 	// The node's type carries the package it was installed from, which the same
 	// node has more than one of over its life.
-	it('recognises the response node under any package name', () => {
-		for (const type of RESPONSE_NODE_TYPES) {
-			expect(() => checkResponseModeConfiguration(makeContext('responseNode', [type]))).not.toThrow();
+	it('recognises the responder under any package name', () => {
+		for (const type of ACTION_NODE_TYPES) {
+			expect(() =>
+				checkResponseModeConfiguration(makeContext('responseNode', [responder(type)])),
+			).not.toThrow();
 		}
 		expect(() =>
-			checkResponseModeConfiguration(makeContext('responseNode', ['other.notAResponseNode'])),
-		).toThrow('No Servicely AI Agent Tool Response node found');
+			checkResponseModeConfiguration(makeContext('responseNode', [{ type: 'other.somethingElse' }])),
+		).toThrow('No Servicely node set to "AI Agent Tool" found');
 	});
 
-	// The trigger's type is the response node's plus "Trigger" — that is what makes
-	// the editor show them as one card — so a trigger downstream of a trigger must
-	// not read as the thing that answers.
-	it('does not mistake another trigger for a response node', () => {
+	// A Servicely node is in almost every one of these workflows, doing the work the
+	// tool was called for. Only the one set to answer counts as the answer.
+	it('does not mistake a Servicely node on another resource for the responder', () => {
+		for (const parameters of [
+			undefined,
+			{},
+			{ resource: 'object', operation: 'get' },
+			{ resource: 'queue', operation: 'replySuccess' },
+		]) {
+			const children = [{ type: 'servicely', parameters }];
+
+			expect(() => checkResponseModeConfiguration(makeContext('responseNode', children))).toThrow(
+				'No Servicely node set to "AI Agent Tool" found',
+			);
+			expect(() =>
+				checkResponseModeConfiguration(makeContext('onReceived', children)),
+			).not.toThrow();
+		}
+	});
+
+	// The trigger's type is the action node's stem plus a suffix, and neither
+	// trigger must read as the thing that answers.
+	it('does not mistake a trigger for the responder', () => {
 		for (const type of [
 			'@synergyconsulting/n8n-nodes-servicely.servicelyAiAgentToolTrigger',
 			'servicelyAiAgentToolTrigger',
+			'@synergyconsulting/n8n-nodes-servicely.servicelyTrigger',
+			'servicelyTrigger',
 		]) {
-			expect(() => checkResponseModeConfiguration(makeContext('responseNode', [type]))).toThrow(
-				'No Servicely AI Agent Tool Response node found',
+			const children = [{ type, parameters: { resource: 'aiAgentTool' } }];
+
+			expect(() => checkResponseModeConfiguration(makeContext('responseNode', children))).toThrow(
+				'No Servicely node set to "AI Agent Tool" found',
 			);
 			expect(() =>
-				checkResponseModeConfiguration(makeContext('onReceived', [type])),
+				checkResponseModeConfiguration(makeContext('onReceived', children)),
 			).not.toThrow();
 		}
+	});
+
+	// The guard is the only thing that reads the parameters, so it has to ask for
+	// them: without the flag n8n leaves `parameters` off every child.
+	it('asks for the child nodes with their parameters', () => {
+		const calls: Array<unknown> = [];
+		const context = {
+			getNodeParameter: () => 'onReceived',
+			getNode: () => ({ name: 'Servicely AI Agent Tool', type: 'servicelyAiAgentToolTrigger' }),
+			getChildNodes: (_name: string, options?: unknown) => {
+				calls.push(options);
+				return [];
+			},
+		} as unknown as IWebhookFunctions;
+
+		checkResponseModeConfiguration(context);
+
+		expect(calls).toEqual([{ includeNodeParameters: true }]);
 	});
 });

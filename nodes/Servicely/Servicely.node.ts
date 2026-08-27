@@ -29,7 +29,16 @@ export class Servicely implements INodeType {
     defaults: { name: 'Servicely' },
     inputs: [NodeConnectionTypes.Main],
     outputs: [NodeConnectionTypes.Main],
-    credentials: [{ name: 'servicelyApi', required: true }],
+    // Required for every resource that calls the API, which is all of them except
+    // AI Agent Tool: that one answers the request a tool call is still holding
+    // open, and never talks to the instance.
+    credentials: [
+      {
+        name: 'servicelyApi',
+        required: true,
+        displayOptions: { hide: { resource: ['aiAgentTool'] } },
+      },
+    ],
     properties,
   };
 

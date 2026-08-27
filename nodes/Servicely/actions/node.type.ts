@@ -8,6 +8,8 @@ type ServicelyMap = {
   // `call` is the pre-rename value of `invoke`, still accepted (see controller/index.ts)
   controller: 'invoke' | 'call';
   globalSearch: 'batchSearch' | 'search';
+  // Answers the open request of a tool call instead of calling the API — see aiAgentTool/index.ts
+  aiAgentTool: 'sendResponse';
 };
 
 /**

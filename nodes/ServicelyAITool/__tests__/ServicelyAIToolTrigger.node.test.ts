@@ -9,7 +9,11 @@ import { ServicelyAIToolTrigger } from '../ServicelyAIToolTrigger.node';
 const node = new ServicelyAIToolTrigger();
 
 /** The response node, as n8n types it once the package is installed. */
-const RESPONSE_NODE_TYPE = '@synergyconsulting/n8n-nodes-servicely.servicelyAiAgentTool';
+/** The Servicely action node set to answer the call, as `getChildNodes` reports it. */
+const RESPONDER = {
+	type: '@synergyconsulting/n8n-nodes-servicely.servicely',
+	parameters: { resource: 'aiAgentTool', operation: 'sendResponse' },
+};
 
 interface WebhookStubOptions {
 	params?: IDataObject;
@@ -17,8 +21,8 @@ interface WebhookStubOptions {
 	/** Attached Servicely AI Agent Tool Auth credential; absent leaves the endpoint open. */
 	credential?: IDataObject;
 	headers?: Record<string, string>;
-	/** Types of the nodes downstream of the trigger, which decide the Respond wiring. */
-	children?: string[];
+	/** The nodes downstream of the trigger, which decide the Respond wiring. */
+	children?: Array<{ type: string; parameters?: Record<string, unknown> }>;
 }
 
 /** Minimal stand-in for the still open express response. */
@@ -79,7 +83,7 @@ function makeWebhookCtx(options: WebhookStubOptions = {}) {
 		getRequestObject: () => ({ headers: options.headers ?? {} }),
 		getCredentials: async () => options.credential,
 		getChildNodes: () =>
-			(options.children ?? []).map((type, index) => ({ name: `node ${index}`, type })),
+			(options.children ?? []).map((child, index) => ({ name: `node ${index}`, ...child })),
 		getNode: () => ({
 			name: 'Servicely AI Agent Tool',
 			// Without an attached credential the endpoint takes any caller
@@ -198,7 +202,13 @@ describe('node description', () => {
 			.find((entry) => entry.name === 'paramType')
 			?.options?.map((option) => (option as { value: string }).value);
 
-		expect(fields).toEqual(['paramName', 'paramType', 'paramRequired', 'paramDescription']);
+		expect(fields).toEqual([
+			'paramDescription',
+			'paramFromScript',
+			'paramName',
+			'paramRequired',
+			'paramType',
+		]);
 		expect(types).toEqual(['boolean', 'integer', 'number', 'string']);
 	});
 
@@ -551,7 +561,7 @@ describe('response mode', () => {
 
 	it('does not answer the waiting modes itself either', async () => {
 		for (const responseMode of ['lastNode', 'responseNode']) {
-			const children = responseMode === 'responseNode' ? [RESPONSE_NODE_TYPE] : [];
+			const children = responseMode === 'responseNode' ? [RESPONDER] : [];
 			const { response } = await webhook({ params: { responseMode }, children });
 
 			expect(response.headersSent).toBe(false);
@@ -560,12 +570,12 @@ describe('response mode', () => {
 
 	it('refuses a call the workflow could not answer', async () => {
 		await expect(webhook({ params: { responseMode: 'responseNode' } })).rejects.toThrow(
-			'No Servicely AI Agent Tool Response node found in the workflow',
+			'No Servicely node set to "AI Agent Tool" found in the workflow',
 		);
 
 		await expect(
-			webhook({ params: { responseMode: 'lastNode' }, children: [RESPONSE_NODE_TYPE] }),
-		).rejects.toThrow('Unused Servicely AI Agent Tool Response node found in the workflow');
+			webhook({ params: { responseMode: 'lastNode' }, children: [RESPONDER] }),
+		).rejects.toThrow('Unused Servicely node set to "AI Agent Tool" found in the workflow');
 	});
 
 	// Checked before anything is read from the request, so a workflow that cannot
@@ -576,6 +586,6 @@ describe('response mode', () => {
 				params: { responseMode: 'responseNode' },
 				credential: { type: 'headerAuth', headerName: 'X-API-KEY', headerValue: 'expected' },
 			}),
-		).rejects.toThrow('No Servicely AI Agent Tool Response node found in the workflow');
+		).rejects.toThrow('No Servicely node set to "AI Agent Tool" found in the workflow');
 	});
 });

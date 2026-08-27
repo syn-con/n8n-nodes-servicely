@@ -1,5 +1,6 @@
 import type { INodeProperties } from 'n8n-workflow';
 
+import * as aiAgentTool from './aiAgentTool';
 import * as attachment from './attachment';
 import { requestOptionsProperty } from './common.descriptions';
 import * as controller from './controller';
@@ -24,6 +25,7 @@ export const properties: INodeProperties[] = [
     noDataExpression: true,
     // Alphabetical by name, as n8n's own resource selectors are
     options: [
+      { name: 'AI Agent Tool', value: 'aiAgentTool' },
       { name: 'Attachment', value: 'attachment' },
       { name: 'Controller', value: 'controller' },
       { name: 'Global Search', value: 'globalSearch' },
@@ -37,5 +39,6 @@ export const properties: INodeProperties[] = [
   ...globalSearch.description,
   ...queue.description,
   ...controller.description,
+  ...aiAgentTool.description,
   requestOptionsProperty,
 ];

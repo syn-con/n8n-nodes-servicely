@@ -1,15 +1,16 @@
 import {
 	type INodeProperties,
 	type IWebhookFunctions,
+	type NodeTypeAndVersion,
 	WorkflowConfigurationError,
 } from 'n8n-workflow';
 
 import { DEFAULT_RESPONSE_TIMEOUT_SECONDS } from './parameters';
-import { TOOL_NODE_TYPE } from './presentation';
+import { RESPONSE_NODE_TYPE, RESPONSE_RESOURCE } from './presentation';
 
 /**
- * How the AI Tool answers a call, modelled on n8n's own Webhook node
- * (`packages/nodes-base/nodes/Webhook`): the node itself never writes the
+ * How the AI Agent Tool answers a call, modelled on n8n's own Webhook node
+ * (`packages/nodes-base/nodes/Webhook`): the trigger itself never writes the
  * response for a mode that answers later. It only *declares* — in its webhook
  * description — the mode, the status code and what data to send, and n8n's
  * webhook layer does the answering.
@@ -33,7 +34,7 @@ export interface ResponseParameters {
 
 /**
  * The status code n8n answers with, for every mode that does not have a
- * Servicely AI Agent Tool Response node to take the decision.
+ * Servicely node set to *AI Agent Tool* to take the decision.
  *
  * Interpolated into an expression, so it must stand on its own: no imports, no
  * helpers, nothing from this module's scope.
@@ -54,9 +55,9 @@ export const getResponseCode = (parameters: ResponseParameters) => {
  * Finishes*, and to whatever `webhook()` returned as `webhookResponse` for
  * *Immediately*).
  *
- * `Using Servicely AI Agent Tool Response Node` answers nothing here on purpose: that
- * node sends the whole response, so a body declared next to it would be a
- * second answer to the same request.
+ * `Using Servicely Node` answers nothing here on purpose: that node sends the
+ * whole response, so a body declared next to it would be a second answer to the
+ * same request.
  *
  * Interpolated into an expression — see {@link getResponseCode}.
  */
@@ -79,14 +80,24 @@ export const getResponseData = (parameters: ResponseParameters) => {
 };
 
 /**
- * Whether a node type is the one that answers a tool call.
+ * Whether a node is the one that answers a tool call: the Servicely node with its
+ * Resource set to *AI Agent Tool*. Until 1.2.0 this was a node type of its own,
+ * and the type alone said so; the answer now lives on the action node, so the
+ * parameter has to be read too — hence the `includeNodeParameters` below.
+ *
+ * `resource` is absent from a node left on its default, and that default is
+ * `object`, so an unset parameter correctly reads as "not the responder".
  *
  * n8n prefixes a community node's type with the package it came from, and a
  * package can be installed under more than one name over a node's life, so the
- * suffix is what identifies it.
+ * suffix is what identifies it. The suffix is exact: `servicelyTrigger` and
+ * `servicelyAiAgentToolTrigger` do not end in `.servicely`.
  */
-function isResponseNode(type: string): boolean {
-	return type === TOOL_NODE_TYPE || type.endsWith(`.${TOOL_NODE_TYPE}`);
+function isResponseNode(node: NodeTypeAndVersion): boolean {
+	const isActionNode =
+		node.type === RESPONSE_NODE_TYPE || node.type.endsWith(`.${RESPONSE_NODE_TYPE}`);
+
+	return isActionNode && node.parameters?.resource === RESPONSE_RESOURCE;
 }
 
 /**
@@ -94,25 +105,25 @@ function isResponseNode(type: string): boolean {
  * request is let in — the Webhook node's `checkResponseModeConfiguration`.
  *
  * Both halves are the same mistake seen from either side. A tool set to answer
- * from a response node that has none would leave the agent waiting for an
- * answer nobody sends, and a response node under any other mode never gets to
- * send the answer it was configured with, because n8n has already replied by
- * the time it runs. Saying so costs the caller a 500 once; the alternative is a
+ * from a responder that has none would leave the agent waiting for an answer
+ * nobody sends, and a responder under any other mode never gets to send the
+ * answer it was configured with, because n8n has already replied by the time it
+ * runs. Saying so costs the caller a 500 once; the alternative is a
  * workflow that looks like it works.
  */
 export function checkResponseModeConfiguration(context: IWebhookFunctions): void {
 	const responseMode = context.getNodeParameter('responseMode', 'responseNode') as string;
 	const responseNodes = context
-		.getChildNodes(context.getNode().name)
-		.filter((node) => isResponseNode(node.type));
+		.getChildNodes(context.getNode().name, { includeNodeParameters: true })
+		.filter(isResponseNode);
 
 	if (responseNodes.length === 0 && responseMode === 'responseNode') {
 		throw new WorkflowConfigurationError(
 			context.getNode(),
-			new Error('No Servicely AI Agent Tool Response node found in the workflow'),
+			new Error('No Servicely node set to "AI Agent Tool" found in the workflow'),
 			{
 				description:
-					'Add a Servicely AI Agent Tool Response node to this workflow to answer the agent, or choose another option for the "Respond" parameter.',
+					'Add a Servicely node with Resource "AI Agent Tool" and Operation "Send Response" to this workflow to answer the agent, or choose another option for the "Respond" parameter.',
 			},
 		);
 	}
@@ -120,10 +131,10 @@ export function checkResponseModeConfiguration(context: IWebhookFunctions): void
 	if (responseNodes.length > 0 && responseMode !== 'responseNode') {
 		throw new WorkflowConfigurationError(
 			context.getNode(),
-			new Error('Unused Servicely AI Agent Tool Response node found in the workflow'),
+			new Error('Unused Servicely node set to "AI Agent Tool" found in the workflow'),
 			{
 				description:
-					'Set the "Respond" parameter to "Using Servicely AI Agent Tool Response Node", or remove the Servicely AI Agent Tool Response node.',
+					'Set the "Respond" parameter to "Using Servicely Node", or remove the Servicely node set to "AI Agent Tool".',
 			},
 		);
 	}
@@ -140,7 +151,7 @@ export const responseWebhookFields = {
 };
 
 /**
- * The node's Respond selector. The default is the response node, and not n8n's
+ * The trigger's Respond selector. The default is the responder, and not n8n's
  * `onReceived`: a tool exists to answer the agent with something it can use,
  * which is what that mode is for. It also has to stay put — n8n drops a
  * parameter left at its default when a workflow is saved, so moving the default
@@ -163,9 +174,11 @@ export const responseModeProperty: INodeProperties = {
 			description: 'Returns data of the last-executed node',
 		},
 		{
-			name: 'Using Servicely AI Agent Tool Response Node',
+			// The value is n8n's own, and what its webhook layer understands. Only the
+			// label moved when the responder became a resource of the action node.
+			name: 'Using Servicely Node',
 			value: 'responseNode',
-			description: 'Response defined in that node',
+			description: 'Response defined by a Servicely node set to "AI Agent Tool"',
 		},
 	],
 	default: 'responseNode',
@@ -176,7 +189,7 @@ export const responseModeProperty: INodeProperties = {
 export const responseModeNotices: INodeProperties[] = [
 	{
 		displayName:
-			'Insert a Servicely AI Agent Tool Response node to control when and how you respond. The request stays open until that node runs, so a workflow that never reaches it never answers.',
+			'Insert a Servicely node with Resource "AI Agent Tool" and Operation "Send Response" to control when and how you respond. The request stays open until that node runs, so a workflow that never reaches it never answers.',
 		name: 'responseNodeNotice',
 		type: 'notice',
 		default: '',
@@ -275,7 +288,7 @@ export const responseOptions: INodeProperties[] = [
 		},
 		default: 200,
 		description: 'The HTTP status code to answer with',
-		// The response node carries its own status code, so this would only
+		// The responder carries its own status code, so this would only
 		// contradict it.
 		displayOptions: { hide: { '/responseMode': ['responseNode'] } },
 	},

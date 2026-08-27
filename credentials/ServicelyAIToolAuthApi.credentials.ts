@@ -65,6 +65,11 @@ export class ServicelyAIToolAuthApi implements ICredentialType {
 			description: 'Name of the header the request must send',
 			displayOptions: { show: { type: ['headerAuth'] } },
 		},
+		// The secret a caller has to present, whatever the header carrying it is named:
+		// checked against the header with the same constant-time `safeEqual` as the Basic
+		// Auth password and the JWT secret (see `authentication.ts`), so it is masked like
+		// them. The rule reads the field's name rather than its role, and `headerValue`
+		// does not read as sensitive on its own.
 		// eslint-disable-next-line @n8n/community-nodes/credential-unnecessary-password -- the header's value *is* the shared secret a caller has to present, whatever the header is named
 		{
 			displayName: 'Header Value',

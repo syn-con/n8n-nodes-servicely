@@ -1,6 +1,6 @@
 {
   "name": "@synergyconsulting/n8n-nodes-servicely",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "n8n community node for the Servicely ITSM/ESM JSON REST API (v1)",
   "keywords": [
     "n8n-community-node-package"
@@ -35,7 +35,6 @@
     "nodes": [
       "dist/nodes/Servicely/Servicely.node.js",
       "dist/nodes/Servicely/ServicelyTrigger.node.js",
-      "dist/nodes/ServicelyAITool/ServicelyAITool.node.js",
       "dist/nodes/ServicelyAITool/ServicelyAIToolTrigger.node.js"
     ]
   },

@@ -459,6 +459,9 @@ export const requestOptionsProperty: INodeProperties = {
   type: 'collection',
   placeholder: 'Add Option',
   default: {},
+  // Every resource but AI Agent Tool, which answers an open request rather than
+  // making one, so a timeout and a retry count have nothing to apply to
+  displayOptions: { hide: { resource: ['aiAgentTool'] } },
   options: [
     {
       displayName: 'Timeout (Ms)',

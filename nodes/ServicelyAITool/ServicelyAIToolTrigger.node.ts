@@ -158,10 +158,28 @@ export class ServicelyAIToolTrigger implements INodeType {
 					{
 						name: 'values',
 						displayName: 'Parameter',
-						// Alphabetical by displayName, which is what the n8n lint rules ask of a
-						// section with five or more fields — not the order a row is filled in
-						// eslint-disable-next-line n8n-nodes-base/node-param-fixed-collection-type-unsorted-items -- filled in top to bottom, not alphabetically
 						values: [
+							{
+								displayName: 'Description',
+								name: 'paramDescription',
+								type: 'string',
+								noDataExpression: true,
+								default: '',
+								placeholder: 'e.g. ID of the customer the incident is raised for',
+								// Nothing exports a parameter the script fills in, so there is nothing for a
+								// description of it to reach
+								displayOptions: { hide: { paramFromScript: [true] } },
+								description: 'What this argument means. Exported with the tool.',
+							},
+							{
+								displayName: 'From Script',
+								name: 'paramFromScript',
+								type: 'boolean',
+								noDataExpression: true,
+								default: false,
+								description:
+									'Whether the value comes from the Execution Script instead of the agent. The parameter is then not created as a tool parameter, so the agent is never offered it, and the default script sends the signed-in Servicely user for it — their email address, or their username when the account has no email — refusing a call from a user it cannot name. Keep such a parameter typed String, since that is what the script assigns. It is still validated here like any other parameter, and never counts as unknown when Allow Unknown Parameters is off.',
+							},
 							{
 								displayName: 'Name',
 								name: 'paramName',
@@ -171,6 +189,19 @@ export class ServicelyAIToolTrigger implements INodeType {
 								placeholder: 'e.g. customerId',
 								description: 'Name of the argument, as the agent has to send it',
 								required: true,
+							},
+							{
+								displayName: 'Required',
+								name: 'paramRequired',
+								type: 'boolean',
+								noDataExpression: true,
+								// Ticked by default, so a parameter declared before this box existed —
+								// where every one of them had to be sent — keeps being validated the
+								// same way. n8n drops the field from the saved workflow while it is
+								// ticked, which is why an absent value reads as required.
+								default: true,
+								description:
+									'Whether a call has to send this argument. Turn it off and a call that leaves it out still runs; one that does send it still has to send the declared type. This is checked here only — the tool is exported with the argument either way.',
 							},
 							{
 								displayName: 'Type',
@@ -201,40 +232,6 @@ export class ServicelyAIToolTrigger implements INodeType {
 								// with the same type either way.
 								default: 'string',
 								description: 'The type the value must have. Defaults to String.',
-							},
-							{
-								displayName: 'From Script',
-								name: 'paramFromScript',
-								type: 'boolean',
-								noDataExpression: true,
-								default: false,
-								description:
-									'Whether the value comes from the Execution Script instead of the agent. The parameter is then not created as a tool parameter, so the agent is never offered it, and the default script sends the signed-in Servicely user for it — their email address, or their username when the account has no email — refusing a call from a user it cannot name. Keep such a parameter typed String, since that is what the script assigns. It is still validated here like any other parameter, and never counts as unknown when Allow Unknown Parameters is off.',
-							},
-							{
-								displayName: 'Description',
-								name: 'paramDescription',
-								type: 'string',
-								noDataExpression: true,
-								default: '',
-								placeholder: 'e.g. ID of the customer the incident is raised for',
-								// Nothing exports a parameter the script fills in, so there is nothing for a
-								// description of it to reach
-								displayOptions: { hide: { paramFromScript: [true] } },
-								description: 'What this argument means. Exported with the tool.',
-							},
-							{
-								displayName: 'Required',
-								name: 'paramRequired',
-								type: 'boolean',
-								noDataExpression: true,
-								// Ticked by default, so a parameter declared before this box existed —
-								// where every one of them had to be sent — keeps being validated the
-								// same way. n8n drops the field from the saved workflow while it is
-								// ticked, which is why an absent value reads as required.
-								default: true,
-								description:
-									'Whether a call has to send this argument. Turn it off and a call that leaves it out still runs; one that does send it still has to send the declared type. This is checked here only — the tool is exported with the argument either way.',
 							},
 						],
 					},

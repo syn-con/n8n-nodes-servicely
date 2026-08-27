@@ -16,11 +16,20 @@ async function run(options: ExecuteCtxOptions) {
 
 describe('node description', () => {
   it('declares every resource and the credential', () => {
-    expect(node.description.credentials).toEqual([{ name: 'servicelyApi', required: true }]);
+    // Asked for by every resource but AI Agent Tool, which answers the open
+    // request of a tool call instead of calling the API
+    expect(node.description.credentials).toEqual([
+      {
+        name: 'servicelyApi',
+        required: true,
+        displayOptions: { hide: { resource: ['aiAgentTool'] } },
+      },
+    ]);
     const resource = node.description.properties.find((property) => property.name === 'resource');
     // Alphabetical by display name, which is what n8n's own selectors do and what
     // its node lint requires
     expect(resource?.options?.map((option) => 'value' in option && option.value)).toEqual([
+      'aiAgentTool',
       'attachment',
       'controller',
       'globalSearch',
