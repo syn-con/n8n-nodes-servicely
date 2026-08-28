@@ -35,6 +35,7 @@ describe('node description', () => {
       'globalSearch',
       'object',
       'queue',
+      'serviceCatalog',
     ]);
   });
 
@@ -590,6 +591,75 @@ describe('global search resource', () => {
     await expect(run({ params: { resource: 'globalSearch', operation: 'lookup' } })).rejects.toThrow(
       /The operation "lookup" is not supported for resource "globalSearch"/,
     );
+  });
+});
+
+describe('service catalog resource', () => {
+  /** A Questions mapper value, as n8n stores it. */
+  const questions = (value: Record<string, unknown>) => ({ mappingMode: 'defineBelow', value });
+
+  it('raises the request in one post, carrying the answers keyed by question id', async () => {
+    const http = makeHttpStub([ok({ id: 'req1', Number: 'REQ001' })]);
+    const items = await run({
+      http,
+      params: {
+        resource: 'serviceCatalog',
+        operation: 'createRequest',
+        catalogItemId: 'ci1',
+        questions: questions({ q1: 'MacBook Pro', q2: 2 }),
+      },
+    });
+
+    // One write, so there is never a partly built request to clean up
+    expect(http.count()).toBe(1);
+    expect([http.calls[0].options.method, http.calls[0].options.url, http.calls[0].options.body]).toEqual([
+      'POST',
+      '/controller/ServiceCatalog',
+      { catalogItem: 'ci1', answers: { q1: 'MacBook Pro', q2: 2 } },
+    ]);
+    expect(items).toEqual([{ json: { id: 'req1', Number: 'REQ001' }, pairedItem: { item: 0 } }]);
+  });
+
+  it('drops an answer left blank rather than sending it empty', async () => {
+    const http = makeHttpStub([ok({ id: 'req1' })]);
+    await run({
+      http,
+      params: {
+        resource: 'serviceCatalog',
+        operation: 'createRequest',
+        catalogItemId: 'ci1',
+        questions: questions({ q1: 'x', q2: '', q3: null }),
+      },
+    });
+
+    expect(http.calls[0].options.body).toEqual({ catalogItem: 'ci1', answers: { q1: 'x' } });
+  });
+
+  it('still posts when the item asks nothing', async () => {
+    const http = makeHttpStub([ok({ id: 'req1' })]);
+    await run({
+      http,
+      params: { resource: 'serviceCatalog', operation: 'createRequest', catalogItemId: 'ci1' },
+    });
+
+    expect(http.calls[0].options.body).toEqual({ catalogItem: 'ci1', answers: {} });
+  });
+
+  it('refuses to post without a catalog item', async () => {
+    const http = makeHttpStub([ok({})]);
+    await expect(
+      run({
+        http,
+        params: { resource: 'serviceCatalog', operation: 'createRequest', catalogItemId: '   ' },
+      }),
+    ).rejects.toThrow('No catalog item selected');
+    expect(http.count()).toBe(0);
+  });
+
+  it('rejects an operation the resource does not have', async () => {
+    await expect(
+      run({ params: { resource: 'serviceCatalog', operation: 'cancelRequest' } }),
+    ).rejects.toThrow(/"cancelRequest" is not supported for resource "serviceCatalog"/);
   });
 });
 

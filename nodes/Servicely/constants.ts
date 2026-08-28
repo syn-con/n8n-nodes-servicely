@@ -17,6 +17,19 @@ export const CONTROLLER_TABLE = 'SystemController';
 /** Global Search controller (searchable-table config + the searches themselves). */
 export const GLOBAL_SEARCH_PATH = `${CONTROLLER_PATH_PREFIX}/GlobalSearch`;
 
+/** Table of published service catalog items (backs the Catalog Item picker). */
+export const CATALOG_ITEM_TABLE = 'CatalogItem';
+
+/** Table of the questions a catalog item asks (backs the Questions mapper). */
+export const QUESTION_TABLE = 'Question';
+
+/**
+ * Service Catalog controller, which raises a request in one call: it is given the
+ * catalog item and the answers keyed by question id, and decides for itself where
+ * the request record goes and how each answer is stored.
+ */
+export const SERVICE_CATALOG_PATH = `${CONTROLLER_PATH_PREFIX}/ServiceCatalog`;
+
 /**
  * `request_type` values the Global Search controller discriminates on: its own
  * configuration (one entry per searchable table, which is what the Table picker

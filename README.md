@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
 
-An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform. It talks to the Servicely JSON REST API (v1) so your workflows can read and write records on any table (Incident, Request, User, Group, …), manage file attachments, run a full-text Global Search, and call instance controllers directly. A companion **Servicely Trigger** node starts workflows on a schedule by dequeuing async-queue messages or polling a table by filter, and the **Servicely AI Agent Tool** pair exposes a workflow as a tool the service desk agent can call.
+An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform. It talks to the Servicely JSON REST API (v1) so your workflows can read and write records on any table (Incident, Request, User, Group, …), manage file attachments, run a full-text Global Search, raise requests against the service catalog, and call instance controllers directly. A companion **Servicely Trigger** node starts workflows on a schedule by dequeuing async-queue messages or polling a table by filter, and the **Servicely AI Agent Tool** pair exposes a workflow as a tool the service desk agent can call.
 
 [Installation](#installation) · [Credentials](#credentials) · [Operations](#operations) · [Trigger](#trigger) · [AI Agent Tool](#ai-agent-tool) · [Examples](#examples) · [Compatibility](#compatibility) · [Development](#development)
 
@@ -129,6 +129,125 @@ Acknowledge a message dequeued by the [Servicely Trigger](#trigger) back to the 
 
 - **Reply To** — the message id, defaulting to `={{ $json._servicely.replyTo }}` (emitted by the trigger), so it auto-wires when the trigger feeds this node.
 - **Payload** — the response payload returned to Servicely (defaults to the incoming item's `{{ $json }}`).
+
+### Service Catalog
+
+Raise a request against a published catalog item through the instance's Service Catalog controller. It is a single POST: the node does not read the catalog item, does not create the request record and does not write `Answer` rows — where the record goes and how each answer is stored is the instance's to decide, and the controller owns all of it.
+
+| Operation | Method | Notes |
+|-----------|--------|-------|
+| **Create Request** | `POST {instanceUrl}/controller/ServiceCatalog` | Sends the catalog item and the answers keyed by question record id. |
+
+```json
+{
+  "catalogItem": "60fded6e8ca511eda18bbe07b09d6f655",
+  "answers": {
+    "60fded6e8ca511eda18bbe07b09d6f62": "5659d8d08b4c11f1b8fa2eb7ca4b3cdd",
+    "98fa827f8ca511eda18bbe07b09d6f62": "someone@example.com",
+    "7e0028718ca711eda18bbe07b09d6f62": "free text",
+    "4e24c3ee8ca811eda18bbe07b09d6f62": "123132"
+  }
+}
+```
+
+- **Catalog Item** — **From List** shows `CatalogItem` records, storing each record's id and labelling it by **`Name`**. This is the one record picker that does not prefer `Number`: a catalog item is published, and recognised, under its name, and a list of numbers would be unusable. An item carrying no name is labelled with its id rather than dropped, so it is never silently missing from the list. Or switch to **By ID** for an id / expression.
+- **Questions** — a resource mapper rendering the questions the selected item asks as a form. Its schema comes from every `Question` row whose `Parent` is `{catalogItemId}:CatalogItem` (fetched in full, not one page — a question left off the form is an answer the request cannot supply), and each field's **id is the question's record id**, which is what `answers` is keyed by.
+  - Questions are ordered by the `Question` row's `Order` field (read as a number or as the string a JSON field holds it in); a row without a usable one sorts last, and ties fall back to the label so the form is stable across reloads.
+  - A question is marked required only when `Mandatory` or `Required` is a real boolean `true`.
+  - The label is `Name [Datatype]`. The datatype stays visible even though it also drives the input widget, because Servicely's datatypes are finer than n8n's field types — a reference and a free-text answer are both edited as strings, so dropping it would hide the difference between questions that look identical.
+  - `Datatype` maps to the widget: `boolean`/`checkbox` → boolean, `date`/`datetime` → dateTime, `time` → time, `url` → url, `int`/`integer`/`number`/`decimal`/`float` → number, and **anything else → a plain text box**. A wrong widget would block an answer the instance would have accepted; a text box never does.
+  - The mapper depends on `catalogItemId.value`, so picking another item reloads the form instead of leaving the previous item's questions on screen. With no item selected it shows *Select a catalog item to load its questions* without calling the API; an item that genuinely asks nothing shows *This catalog item asks no questions*; and a read that fails empties the form with *Could not load the questions for this catalog item* rather than failing the node editor.
+- **An answer left blank is dropped** rather than sent as an empty string, so an optional question that was skipped stays unanswered. Nothing answered at all still posts `answers: {}`.
+
+A stale item id, a missing mandatory answer, or an answer the instance rejects comes back as the controller's own error. There is one write, so there is never a partly built request to clean up.
+
+The response is emitted like any other controller answer (see [Controller](#controller)). With the reference controller below that is one item per request:
+
+```json
+{ "Success": true, "TargetTable": "Incident", "TargetRecordID": "a1b2c3..." }
+```
+
+so `{{ $json.TargetRecordID }}` chains into the next node.
+
+#### Instance setup: the `ServiceCatalog` controller
+
+**This operation needs a controller named `ServiceCatalog` on the instance** — Servicely does not ship one. Create it in the **Controller** workspace with the name `ServiceCatalog` (the name is the URL segment, so it must match exactly) and give it a script that accepts `catalogItem` and `answers`. The reference implementation:
+
+```javascript
+const requestedForField = "RequestedFor"
+const requestedField = "Requested"
+const questionsSourceField = 'QuestionsSource'
+const catalogItemRecord = TableProtected("CatalogItem", catalogItem)
+if (!catalogItemRecord) {
+    answer = {
+        isError: true,
+        error: "CatalogItem is not founded"
+    };
+    return;
+}
+const targetTable = catalogItemRecord.Table();
+const nameField = catalogItemRecord.NameField();
+const targetTableRecord = Table("Incident").newRecord()
+if (!targetTableRecord.hasField(questionsSourceField)) {
+    answer = {
+        isError: true,
+        error: "Target table don't has questionsSource Field"
+    };
+    return;
+}
+targetTableRecord.RequestedFor()
+targetTableRecord.setFieldValue(nameField, catalogItemRecord.Name);
+if (targetTableRecord.hasField(requestedForField)) {
+    targetTableRecord.setFieldValue(requestedForField, user.getID());
+}
+if (targetTableRecord.hasField(requestedForField)) {
+    targetTableRecord.setFieldValue(requestedForField, user.getID());
+}
+targetTableRecord.create();
+Object.keys(answers).forEach((key) => {
+     let answer = Table("Answer")
+        .newRecord();
+    answer.RelatedRecord(targetTableRecord.getID() + ":" + targetTable);
+    answer.Question(key);
+    answer.Answer(answers[key]);
+
+    answer.create();
+});
+const checks =
+    TableChecks
+        .NoTableChecksNoSystemFieldsNoChecksNoEvents
+        .withEvaluateFieldValues(
+            true
+        );
+targetTableRecord.tableChecks(checks);
+
+targetTableRecord.setFieldValue(
+    questionsSourceField,
+    catalogItem
+);
+
+targetTableRecord.update();
+
+answer = {
+    "Success" : true,
+    "TargetTable" : targetTable,
+    "TargetRecordID" : targetTableRecord.getID()
+}
+```
+
+What it does, and what the node relies on:
+
+- `catalogItem` and `answers` arrive as the controller's own variables — the two keys the node posts, nothing else.
+- The request record is created first, then one `Answer` row per entry of `answers`, related to it as `{recordId}:{tableName}` and pointing at the question by its record id. **That id is the mapper field's id**, which is why the Questions form is keyed by `Question` row ids rather than by names.
+- The record's name field (`catalogItemRecord.NameField()`) is set to the catalog item's name, and `RequestedFor` to the calling user, so the request is attributed to whoever the credential authenticates as.
+- `QuestionsSource` is written last, under `NoTableChecksNoSystemFieldsNoChecksNoEvents`, so setting it does not re-fire the table's events. **The target table must have a `QuestionsSource` field** — the script refuses the call with `Target table don't has questionsSource Field` if it does not.
+- It answers `{ Success, TargetTable, TargetRecordID }`, which the node emits as-is. On a bad item id it answers `{ isError: true, error: ... }` with HTTP 200, so branch on `isError` (or on `Success`) rather than relying on the node to throw.
+
+Three things to know before copying it as-is:
+
+- **The target table is hardcoded to `Incident`.** `catalogItemRecord.Table()` is read into `targetTable` and used for the `Answer` rows' `RelatedRecord`, but the record itself is created with `Table("Incident")`. If your catalog items point at more than one table, change that line to `Table(targetTable)` — otherwise every request lands in `Incident` while its answers claim to belong to the item's own table.
+- The `RequestedFor` block appears twice and the second run is a no-op; `targetTableRecord.RequestedFor()` (no argument) and the unused `requestedField` are inert. Harmless, and safe to delete.
+- Nothing here validates that a mandatory question was answered. The Questions form marks required questions in n8n, but a workflow that fills the mapper from an expression can still post an incomplete `answers` — add the check to the script if that matters.
 
 ### Controller
 
@@ -284,6 +403,7 @@ A resource of the **Servicely** node, not a node of its own. It is the only reso
 
 - **The AI Agent Tool responder became a resource of the Servicely node in 1.2.0.** [n8n verification](https://docs.n8n.io/integrations/creating-nodes/build/reference/verification-guidelines/) allows a package one regular node plus a trigger for the same service, and this package had two regular nodes. The `servicelyAiAgentTool` node is **removed**; what it did is now **Servicely → AI Agent Tool → Send Response**, with the same fields under the same names. The trigger is untouched — same `servicelyAiAgentToolTrigger` type, same parameters, same registered tool — so **an active workflow keeps its tool registration and its endpoint**; only the node that answers has to be replaced. To migrate a workflow: open it, delete the *Servicely AI Agent Tool Response* node, add a **Servicely** node in its place with Resource *AI Agent Tool* and Operation *Send Response*, copy the Respond With / Data / Options values across, and reconnect it. The trigger's **Respond** option that was called *Using Servicely AI Agent Tool Response Node* is now *Using Servicely Node*; its stored value is unchanged, so a saved workflow keeps the mode it had and needs no edit there. Until the responder is replaced the trigger refuses calls with `No Servicely node set to "AI Agent Tool" found in the workflow` rather than leaving the agent waiting.
 - **AI Agent Tool node types changed in 0.7.0** so the pair could become one entry in the nodes panel: the trigger became `servicelyAiAgentToolTrigger` and the node that answered became `servicelyAiAgentTool` (which 1.2.0 then replaced with the resource above). The types published before that — `servicelyAiTool` (trigger) and `servicelyAiToolResponse` — were kept registered and hidden through the 0.7.x line and are **removed as of 0.8.0**. A workflow still on them loads with unrecognised nodes: its endpoint stops answering and its tool stays registered in the service desk until the workflow is opened, the two nodes replaced with the current pair, and the workflow re-activated (the tool re-registers under the new node's id, leaving the old record to be deleted by hand). Replace both halves together — a current trigger no longer recognises an old response node.
+- **Service Catalog → Create Request needs a `ServiceCatalog` controller on the instance.** Servicely does not ship one; the operation posts to `POST {instanceUrl}/controller/ServiceCatalog` and the controller owns everything about where the request record goes and how each answer is stored. See [Instance setup: the `ServiceCatalog` controller](#instance-setup-the-servicecatalog-controller) for a reference script. Without it the node fails with the instance's own "no such controller" error.
 - Requires an n8n version supporting community nodes (`n8nNodesApiVersion: 1`).
 - Servicely REST API **v1**. Record creation returns **HTTP 200** (not 201).
 - Minimum Servicely versions for optional features:
@@ -347,6 +467,9 @@ nodes/Servicely/
       reply.ts                 # the call both reply operations share
       replyFailure.operation.ts
       replySuccess.operation.ts
+    serviceCatalog/
+      index.ts
+      createRequest.operation.ts # one POST to /controller/ServiceCatalog
     controller/
       index.ts
       invoke.operation.ts      # raw POST to /controller/{ControllerName}
@@ -356,6 +479,7 @@ nodes/Servicely/
   GenericFunctions.ts          # API request helpers + query builders
   SearchFunctions.ts           # listSearch pickers + loadOptions loaders
                                #   (fields, AI agents, AI assistants, roles)
+                               #   + the resourceMapping schema for catalog questions
   constants.ts
   types.ts
 

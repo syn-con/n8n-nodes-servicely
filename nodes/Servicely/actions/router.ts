@@ -7,6 +7,7 @@ import * as globalSearch from './globalSearch';
 import type { Servicely } from './node.type';
 import * as object from './object';
 import * as queue from './queue';
+import * as serviceCatalog from './serviceCatalog';
 import { properties } from './properties';
 
 /** One operation module: its property fragment and its per-item executor. */
@@ -31,6 +32,8 @@ function actionFor(servicely: Servicely): Action | undefined {
       return controller[servicely.operation];
     case 'globalSearch':
       return globalSearch[servicely.operation];
+    case 'serviceCatalog':
+      return serviceCatalog[servicely.operation];
     case 'aiAgentTool':
       return aiAgentTool[servicely.operation];
     default:

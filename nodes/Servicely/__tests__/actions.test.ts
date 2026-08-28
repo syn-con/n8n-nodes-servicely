@@ -7,6 +7,7 @@ import * as controller from '../actions/controller';
 import * as globalSearch from '../actions/globalSearch';
 import * as object from '../actions/object';
 import * as queue from '../actions/queue';
+import * as serviceCatalog from '../actions/serviceCatalog';
 import { properties } from '../actions/properties';
 import { listSearchMethods } from '../SearchFunctions';
 
@@ -16,7 +17,7 @@ import { listSearchMethods } from '../SearchFunctions';
  * property tree and the router would silently disagree.
  */
 
-const RESOURCES = { object, attachment, globalSearch, queue, controller, aiAgentTool };
+const RESOURCES = { object, attachment, globalSearch, queue, controller, serviceCatalog, aiAgentTool };
 
 /**
  * Operation values a resource still answers to under an older name, mapped to the
@@ -120,6 +121,15 @@ describe('the node properties', () => {
         if (method) {
           expect(listSearchMethods.listSearch, property.name).toHaveProperty(method);
         }
+      }
+    }
+  });
+
+  it('only references resourceMapping methods that exist', () => {
+    for (const property of properties) {
+      const method = property.typeOptions?.resourceMapper?.resourceMapperMethod;
+      if (method) {
+        expect(listSearchMethods.resourceMapping, property.name).toHaveProperty(method);
       }
     }
   });

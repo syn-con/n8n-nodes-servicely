@@ -129,11 +129,16 @@ export interface PollCtxOptions {
  * Minimal IPollFunctions / ILoadOptionsFunctions stub. Their
  * `getNodeParameter(name, fallback?)` takes no item index, and neither context
  * exposes `getInputData`.
+ *
+ * `getCurrentNodeParameter` reads the same map: what a resourceMapper's schema
+ * loader sees mid-edit is the parameter as it stands in the UI, and a test
+ * scripting that map is scripting exactly that.
  */
 function makeIndexlessCtx(options: PollCtxOptions = {}) {
   const params = options.params ?? {};
   return {
     getNodeParameter: (name: string, fallback?: unknown) => (name in params ? params[name] : fallback),
+    getCurrentNodeParameter: (name: string) => params[name],
     getNode: () => NODE,
     logger: { error: () => {}, warn: () => {}, info: () => {}, debug: () => {} },
     helpers: { httpRequestWithAuthentication: options.http?.fn ?? makeHttpStub([ok([])]).fn },

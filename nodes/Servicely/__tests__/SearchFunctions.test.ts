@@ -13,10 +13,12 @@ import {
   discoverTables,
   getAiAgents,
   getAiAssistants,
+  getCatalogItemQuestions,
   getFields,
   getRoles,
   listSearchMethods,
   searchActions,
+  searchCatalogItems,
   searchControllers,
   searchFields,
   searchGlobalSearchTables,
@@ -59,6 +61,7 @@ describe('listSearchMethods', () => {
   it('exposes every picker the descriptions reference', () => {
     expect(Object.keys(listSearchMethods.listSearch).sort()).toEqual([
       'searchActions',
+      'searchCatalogItems',
       'searchControllers',
       'searchFields',
       'searchGlobalSearchTables',
@@ -682,5 +685,186 @@ describe('searchActions', () => {
     const { ctx } = ctxFor([ok([{ id: 'p1' }]), ok([{ id: 'a1', Name: 'No command' }])], { queue: 'q' });
 
     await expect(searchActions.call(ctx as ILoadOptionsFunctions)).resolves.toEqual({ results: [] });
+  });
+});
+
+describe('searchCatalogItems', () => {
+  it("labels a catalog item by its name, never by its number", async () => {
+    // recordLabel would prefer Number, and a list of numbers would be unusable
+    const { ctx, http } = ctxFor([ok([{ id: 'ci1', Number: 'CI001', Name: 'New Laptop' }])]);
+
+    const result = await searchCatalogItems.call(ctx as ILoadOptionsFunctions);
+
+    expect(http.calls[0].options.url).toBe('/v1/CatalogItem');
+    expect(result.results).toEqual([{ name: 'New Laptop', value: 'ci1' }]);
+  });
+
+  it('falls back to the id rather than dropping a nameless item', async () => {
+    const { ctx } = ctxFor([ok([{ id: 'ci1' }])]);
+
+    const result = await searchCatalogItems.call(ctx as ILoadOptionsFunctions);
+
+    expect(result.results).toEqual([idOnlyItem('ci1')]);
+  });
+
+  it('filters client-side and keeps paging while the API fills the page', async () => {
+    const { ctx } = ctxFor([ok(fullPage(PICKER_PAGE_SIZE, 'ci'))]);
+
+    const result = await searchCatalogItems.call(ctx as ILoadOptionsFunctions, 'ci-name-99', '2');
+
+    expect(result.results.map((item) => item.value)).toEqual(['ci99']);
+    expect(result.paginationToken).toBe('3');
+  });
+});
+
+describe('getCatalogItemQuestions', () => {
+  /** The mapper reads the locator's inner `.value` as it stands in the UI. */
+  function mapperCtx(script: HttpStep[], catalogItemId?: string) {
+    return ctxFor(script, { 'catalogItemId.value': catalogItemId });
+  }
+
+  it('asks for nothing until an item is selected', async () => {
+    const { ctx, http } = mapperCtx([ok([])]);
+
+    await expect(getCatalogItemQuestions.call(ctx as ILoadOptionsFunctions)).resolves.toEqual({
+      fields: [],
+      emptyFieldsNotice: 'Select a catalog item to load its questions.',
+    });
+    expect(http.count()).toBe(0);
+  });
+
+  it("reads the item's questions by its parent reference", async () => {
+    const { ctx, http } = mapperCtx([ok([{ id: 'q1', Name: 'Model', Datatype: 'string' }])], 'ci1');
+
+    const result = await getCatalogItemQuestions.call(ctx as ILoadOptionsFunctions);
+
+    expect(http.calls[0].options.url).toBe('/v1/Question');
+    expect(JSON.parse(String((http.calls[0].options.qs as { query?: unknown }).query))).toEqual({
+      and: [{ fieldName: 'Parent', operator: '=', value: 'ci1:CatalogItem' }],
+    });
+    expect(result.fields).toEqual([
+      {
+        id: 'q1',
+        displayName: 'Model [string]',
+        required: false,
+        type: 'string',
+        display: true,
+        defaultMatch: false,
+      },
+    ]);
+  });
+
+  it('maps each datatype to the field type that edits it, casing aside', async () => {
+    const { ctx } = mapperCtx(
+      [
+        ok([
+          { id: 'q1', Name: 'Count', DataType: 'Integer', Order: 1 },
+          { id: 'q2', Name: 'Agreed', Datatype: 'CHECKBOX', Order: 2 },
+          { id: 'q3', Name: 'Needed By', Datatype: 'date', Order: 3 },
+          { id: 'q4', Name: 'Requestor', Datatype: 'reference', Order: 4 },
+        ]),
+      ],
+      'ci1',
+    );
+
+    const result = await getCatalogItemQuestions.call(ctx as ILoadOptionsFunctions);
+
+    // An unmapped datatype falls back to a plain text box, which never blocks an
+    // answer the instance would have accepted
+    expect(result.fields.map((field) => field.type)).toEqual(['number', 'boolean', 'dateTime', 'string']);
+    expect(result.fields.map((field) => field.displayName)).toEqual([
+      'Count [Integer]',
+      'Agreed [CHECKBOX]',
+      'Needed By [date]',
+      'Requestor [reference]',
+    ]);
+  });
+
+  it('marks a question required only on a real boolean true', async () => {
+    const { ctx } = mapperCtx(
+      [
+        ok([
+          { id: 'q1', Name: 'A', Mandatory: true, Order: 1 },
+          { id: 'q2', Name: 'B', Required: true, Order: 2 },
+          { id: 'q3', Name: 'C', Mandatory: 'true', Order: 3 },
+          { id: 'q4', Name: 'D', Order: 4 },
+        ]),
+      ],
+      'ci1',
+    );
+
+    const result = await getCatalogItemQuestions.call(ctx as ILoadOptionsFunctions);
+
+    expect(result.fields.map((field) => field.required)).toEqual([true, true, false, false]);
+  });
+
+  it('asks the questions in the order the item declares, unordered rows last', async () => {
+    const { ctx } = mapperCtx(
+      [
+        ok([
+          { id: 'q1', Name: 'Third', Order: '30' },
+          { id: 'q2', Name: 'Nowhere' },
+          { id: 'q3', Name: 'First', Order: 10 },
+          { id: 'q4', Name: 'Second', Order: 20 },
+        ]),
+      ],
+      'ci1',
+    );
+
+    const result = await getCatalogItemQuestions.call(ctx as ILoadOptionsFunctions);
+
+    expect(result.fields.map((field) => field.displayName)).toEqual(['First', 'Second', 'Third', 'Nowhere']);
+  });
+
+  it('keeps the first of two rows sharing an id', async () => {
+    const { ctx } = mapperCtx(
+      [ok([{ id: 'q1', Name: 'Model', Order: 1 }, { id: 'q1', Name: 'Model again', Order: 2 }])],
+      'ci1',
+    );
+
+    const result = await getCatalogItemQuestions.call(ctx as ILoadOptionsFunctions);
+
+    expect(result.fields.map((field) => field.displayName)).toEqual(['Model']);
+  });
+
+  it('says so when the item asks nothing', async () => {
+    const { ctx } = mapperCtx([ok([])], 'ci1');
+
+    await expect(getCatalogItemQuestions.call(ctx as ILoadOptionsFunctions)).resolves.toEqual({
+      fields: [],
+      emptyFieldsNotice: 'This catalog item asks no questions.',
+    });
+  });
+
+  it('empties the form instead of failing the node editor on a failed read', async () => {
+    const { ctx } = mapperCtx([{ status: 500, body: {} }], 'ci1');
+
+    await expect(getCatalogItemQuestions.call(ctx as ILoadOptionsFunctions)).resolves.toEqual({
+      fields: [],
+      emptyFieldsNotice: 'Could not load the questions for this catalog item.',
+    });
+  });
+
+  it('fetches every question, not just the first page', async () => {
+    const { ctx, http } = ctxWith(
+      makeRoutedHttpStub((_url, page) =>
+        page === 1
+          ? ok(
+              Array.from({ length: DISCOVERY_PAGE_SIZE }, (_, i) => ({
+                id: `q${i}`,
+                Name: `Q${i}`,
+                Order: i,
+              })),
+            )
+          : ok([{ id: 'last', Name: 'Last', Order: DISCOVERY_PAGE_SIZE }]),
+      ),
+      { 'catalogItemId.value': 'ci1' },
+    );
+
+    const result = await getCatalogItemQuestions.call(ctx as ILoadOptionsFunctions);
+
+    expect(http.count()).toBe(2);
+    expect(result.fields).toHaveLength(DISCOVERY_PAGE_SIZE + 1);
+    expect(result.fields.at(-1)?.id).toBe('last');
   });
 });

@@ -1,13 +1,22 @@
 import type {
+  FieldType,
   IDataObject,
   ILoadOptionsFunctions,
   INodeListSearchItems,
   INodeListSearchResult,
   INodePropertyOptions,
+  ResourceMapperField,
+  ResourceMapperFields,
 } from 'n8n-workflow';
 
-import { CONTROLLER_TABLE, GLOBAL_SEARCH_PATH, GLOBAL_SEARCH_REQUESTS } from './constants';
-import { attempt, servicelyApiRequest, toRecordList } from './GenericFunctions';
+import {
+  CATALOG_ITEM_TABLE,
+  CONTROLLER_TABLE,
+  GLOBAL_SEARCH_PATH,
+  GLOBAL_SEARCH_REQUESTS,
+  QUESTION_TABLE,
+} from './constants';
+import { attempt, parentRef, servicelyApiRequest, toRecordList } from './GenericFunctions';
 import type { ServicelyRecord } from './types';
 
 /**
@@ -547,6 +556,192 @@ export async function getRoles(this: ILoadOptionsFunctions): Promise<INodeProper
   return recordsByName(this, ROLE_TABLE);
 }
 
+// ---------------------------------------------------------------------------
+// Service Catalog (the Catalog Item picker and the Questions mapper)
+// ---------------------------------------------------------------------------
+
+/** Field holding a catalog item's display name, and a question's. */
+const CATALOG_NAME_FIELD = 'Name';
+
+/** `Question` reference back to the catalog item that asks it (`{id}:CatalogItem`). */
+const QUESTION_PARENT_FIELD = 'Parent';
+
+/** `Question` field holding the sequence the item asks its questions in. */
+const QUESTION_ORDER_FIELD = 'Order';
+
+/**
+ * Field names tried, in order, for a question's datatype and for whether it must
+ * be answered. Servicely's own field names are compound PascalCase
+ * (`ShortDescription`, `ConnectionType`), so both spellings are accepted rather
+ * than betting on one.
+ */
+const QUESTION_DATATYPE_FIELDS = ['Datatype', 'DataType'];
+const QUESTION_REQUIRED_FIELDS = ['Mandatory', 'Required'];
+
+/**
+ * Servicely datatypes mapped to the n8n field type that edits them, keyed in
+ * lower case so the datatype's own casing does not matter. Anything missing falls
+ * back to `string`: a wrong input widget would block an answer the instance would
+ * have accepted, where a plain text box never does.
+ */
+const QUESTION_FIELD_TYPES: Record<string, FieldType> = {
+  boolean: 'boolean',
+  checkbox: 'boolean',
+  date: 'dateTime',
+  datetime: 'dateTime',
+  decimal: 'number',
+  float: 'number',
+  int: 'number',
+  integer: 'number',
+  number: 'number',
+  time: 'time',
+  url: 'url',
+};
+
+/**
+ * Published catalog items (Catalog Item picker), one page at a time.
+ *
+ * Deliberately not the shared `recordLabel`, whose first choice is `Number`: a
+ * catalog item is published, and recognised, under its name, and a list of
+ * numbers would be unusable. A row carrying no name falls back to its id rather
+ * than being dropped, so an item is never silently missing from the list it
+ * belongs in.
+ */
+export async function searchCatalogItems(
+  this: ILoadOptionsFunctions,
+  filter?: string,
+  paginationToken?: string,
+): Promise<INodeListSearchResult> {
+  const page = pageFrom(paginationToken);
+  const records = await listRecords(this, CATALOG_ITEM_TABLE, undefined, SEARCH_PAGE_SIZE, page);
+  const results = records
+    .map((record) => {
+      const id = String(record.id);
+      return searchItem(fieldString(record, CATALOG_NAME_FIELD) ?? id, id);
+    })
+    .filter((item) => matchesFilter(item, filter));
+
+  return pickerPage(results, page, records.length);
+}
+
+/** The first of `fields` the row carries a non-empty string in. */
+function firstFieldString(record: ServicelyRecord, fields: string[]): string | undefined {
+  for (const field of fields) {
+    const value = fieldString(record, field);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Whether a question must be answered. Only a real boolean `true` makes it
+ * mandatory: a row that carries the flag as something else says nothing reliable,
+ * and marking a question required on a guess would block a request the instance
+ * would have accepted.
+ */
+function questionRequired(record: ServicelyRecord): boolean {
+  return QUESTION_REQUIRED_FIELDS.some((field) => record[field] === true);
+}
+
+/**
+ * A question's label: its name with its datatype appended. The datatype stays in
+ * the label even though `type` already drives the widget — Servicely's datatypes
+ * are finer than n8n's field types (a reference and a free-text answer are both
+ * edited as strings), so dropping it hides the difference between questions that
+ * look identical. A nameless row falls back to its id.
+ */
+function questionLabel(record: ServicelyRecord, id: string): string {
+  const name = fieldString(record, CATALOG_NAME_FIELD) ?? id;
+  const datatype = firstFieldString(record, QUESTION_DATATYPE_FIELDS);
+  return datatype === undefined ? name : `${name} [${datatype}]`;
+}
+
+/**
+ * The sequence value a question sorts by. It arrives as a number or as the string
+ * a JSON field holds it in, so both are read; a row without a usable one sorts
+ * last (`Infinity`) rather than first, where it would displace questions that do
+ * say where they belong.
+ */
+function questionOrder(record: ServicelyRecord): number {
+  const value = record[QUESTION_ORDER_FIELD];
+  const order = typeof value === 'number' ? value : Number.parseFloat(String(value ?? ''));
+  return Number.isFinite(order) ? order : Number.POSITIVE_INFINITY;
+}
+
+/** One `Question` row as a mapper field, keyed by the id the answers are keyed by. */
+function questionField(record: ServicelyRecord, id: string): ResourceMapperField {
+  const datatype = firstFieldString(record, QUESTION_DATATYPE_FIELDS)?.trim().toLowerCase();
+  return {
+    id,
+    displayName: questionLabel(record, id),
+    required: questionRequired(record),
+    type: (datatype === undefined ? undefined : QUESTION_FIELD_TYPES[datatype]) ?? 'string',
+    display: true,
+    // Declared `supportAutoMap: false`, so nothing is matched against an input column
+    defaultMatch: false,
+  };
+}
+
+/**
+ * The questions the selected catalog item asks, which n8n renders as a form (the
+ * Questions resourceMapper). Each field's `id` is the question's record id, which
+ * is what the controller keys its `answers` object by.
+ *
+ * The chosen item is read with `getCurrentNodeParameter`, not `getNodeParameter`:
+ * the mapper reloads while the node is being edited, so this has to see the
+ * locator as it stands in the UI rather than as the workflow was last saved.
+ *
+ * Every question is fetched, not one page of them — the form is the whole set,
+ * and a question left off it is an answer the request cannot supply. The three
+ * notices are what tell "nothing selected", "could not read" and "asks nothing"
+ * apart; in the UI those cases look identical.
+ */
+export async function getCatalogItemQuestions(this: ILoadOptionsFunctions): Promise<ResourceMapperFields> {
+  const catalogItemId = String(this.getCurrentNodeParameter('catalogItemId.value') ?? '').trim();
+  if (!catalogItemId) {
+    return { fields: [], emptyFieldsNotice: 'Select a catalog item to load its questions.' };
+  }
+
+  let rows: ServicelyRecord[];
+  try {
+    rows = await allRows(this, QUESTION_TABLE, DISCOVERY_PAGE_SIZE, {
+      and: [
+        {
+          fieldName: QUESTION_PARENT_FIELD,
+          operator: '=',
+          value: parentRef(CATALOG_ITEM_TABLE, catalogItemId),
+        },
+      ],
+    });
+  } catch {
+    // Empty the form rather than fail the node editor, as the registry-backed
+    // dropdowns do
+    return { fields: [], emptyFieldsNotice: 'Could not load the questions for this catalog item.' };
+  }
+
+  const byId = new Map<string, { field: ResourceMapperField; order: number }>();
+  for (const row of rows) {
+    const id = fieldString(row, ID_FIELD)?.trim();
+    if (id === undefined || byId.has(id)) {
+      continue;
+    }
+    byId.set(id, { field: questionField(row, id), order: questionOrder(row) });
+  }
+
+  if (byId.size === 0) {
+    return { fields: [], emptyFieldsNotice: 'This catalog item asks no questions.' };
+  }
+
+  // Ties fall back to the label, so the form is stable across reloads
+  const fields = [...byId.values()]
+    .sort((a, b) => a.order - b.order || a.field.displayName.localeCompare(b.field.displayName))
+    .map((entry) => entry.field);
+
+  return { fields };
+}
+
 /** The `methods` block attached to both nodes. */
 export const listSearchMethods = {
   loadOptions: {
@@ -563,5 +758,7 @@ export const listSearchMethods = {
     searchQueues,
     searchActions,
     searchControllers,
+    searchCatalogItems,
   },
+  resourceMapping: { getCatalogItemQuestions },
 };

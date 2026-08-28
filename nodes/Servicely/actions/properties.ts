@@ -7,6 +7,7 @@ import * as controller from './controller';
 import * as globalSearch from './globalSearch';
 import * as object from './object';
 import * as queue from './queue';
+import * as serviceCatalog from './serviceCatalog';
 
 /**
  * The node's fields. Each resource folder contributes its own operation selector
@@ -31,6 +32,7 @@ export const properties: INodeProperties[] = [
       { name: 'Global Search', value: 'globalSearch' },
       { name: 'Object', value: 'object' },
       { name: 'Queue', value: 'queue' },
+      { name: 'Service Catalog', value: 'serviceCatalog' },
     ],
     default: 'object',
   },
@@ -38,6 +40,7 @@ export const properties: INodeProperties[] = [
   ...attachment.description,
   ...globalSearch.description,
   ...queue.description,
+  ...serviceCatalog.description,
   ...controller.description,
   ...aiAgentTool.description,
   requestOptionsProperty,

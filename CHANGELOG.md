@@ -7,6 +7,30 @@ All notable changes to this project are documented here.
 > release, so the durable home for migration notes is the **Compatibility**
 > section of `README.md`.
 
+## 1.3.0
+
+### Added
+
+- **Service Catalog resource**, with a single **Create Request** operation: one
+  `POST {instanceUrl}/controller/ServiceCatalog` carrying the catalog item and
+  the answers keyed by question record id. The node does not read the catalog
+  item, create the request record or write `Answer` rows — where the record goes
+  and how each answer is stored is the instance's to decide, and the controller
+  owns all of it. One write, so there is never a partly built request to clean up.
+
+  - **Catalog Item** — a searchable picker over `CatalogItem`, labelled by `Name`
+    rather than by `Number` as the other record pickers are: a catalog item is
+    published, and recognised, under its name.
+  - **Questions** — a resource mapper whose schema is every `Question` row of the
+    selected item, rendered as a form. Ordered by `Order`, required only on a real
+    boolean `Mandatory`/`Required`, labelled `Name [Datatype]`, and typed from the
+    datatype with a plain text box as the fallback. An answer left blank is dropped
+    rather than sent as an empty string.
+
+  **This needs a controller named `ServiceCatalog` on the instance**, which
+  Servicely does not ship. The README's [Service Catalog](README.md#service-catalog)
+  section carries a reference script and what the node relies on it doing.
+
 ## 1.2.0
 
 ### Breaking
