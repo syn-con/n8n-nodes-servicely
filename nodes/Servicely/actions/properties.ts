@@ -43,5 +43,12 @@ export const properties: INodeProperties[] = [
   ...serviceCatalog.description,
   ...controller.description,
   ...aiAgentTool.description,
-  requestOptionsProperty,
+  {
+    ...requestOptionsProperty,
+    // Every resource but AI Agent Tool, which answers an open request rather than
+    // making one, so a timeout and a retry count have nothing to apply to. Scoped
+    // here rather than on the shared fragment because only this node has a
+    // `resource` parameter for the condition to name — see the fragment's comment.
+    displayOptions: { hide: { resource: ['aiAgentTool'] } },
+  },
 ];

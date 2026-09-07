@@ -7,6 +7,31 @@ All notable changes to this project are documented here.
 > release, so the durable home for migration notes is the **Compatibility**
 > section of `README.md`.
 
+## 1.3.1
+
+### Fixed
+
+- **The Servicely Trigger's settings panel would not open**, failing with
+  `Could not resolve parameter dependencies. Max iterations reached!` The shared
+  **Request Options** fragment carried `displayOptions: { hide: { resource:
+  ['aiAgentTool'] } }` — correct on the Servicely node, which has a `resource`
+  parameter, and dangling on the trigger, which does not. n8n's editor orders a
+  node's parameters by resolving the dependencies their `displayOptions` declare,
+  and a condition naming a parameter the node has no trace of is one it can never
+  resolve, so it gives up and the panel never renders.
+
+  The resource scope now lives on the Servicely node's own property list, and the
+  shared fragment is declared without `displayOptions` like every other fragment
+  beside it. Both nodes show exactly the fields they showed before — nothing
+  stored changes, and no workflow needs editing.
+
+  Introduced in 1.2.0, when the AI Agent Tool responder became a resource.
+
+  A test now walks every registered node and asserts that no `displayOptions`
+  condition, and no `loadOptionsDependsOn` entry, names a parameter that node does
+  not declare — the class of bug that passes every unit test and both linters
+  while leaving a node unusable in the UI.
+
 ## 1.3.0
 
 ### Added

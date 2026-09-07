@@ -452,6 +452,15 @@ export const limitProperty: INodeProperties = {
 /**
  * Request-level options shared by every operation and by the trigger. These map
  * to the transport's resilience config rather than to any API query parameter.
+ *
+ * Declared without `displayOptions`, like every other fragment here, and for a
+ * reason this one learnt the hard way: the Servicely node hides it for the AI
+ * Agent Tool resource, but the **trigger has no `resource` parameter at all**, and
+ * a `displayOptions` naming a parameter the node does not declare is one n8n's
+ * editor can never resolve — it gives up with "Could not resolve parameter
+ * dependencies. Max iterations reached!" and the node's settings panel does not
+ * open. So the resource scope is applied by `actions/properties.ts`, the one
+ * consumer that has a `resource` to scope against.
  */
 export const requestOptionsProperty: INodeProperties = {
   displayName: 'Request Options',
@@ -459,9 +468,6 @@ export const requestOptionsProperty: INodeProperties = {
   type: 'collection',
   placeholder: 'Add Option',
   default: {},
-  // Every resource but AI Agent Tool, which answers an open request rather than
-  // making one, so a timeout and a retry count have nothing to apply to
-  displayOptions: { hide: { resource: ['aiAgentTool'] } },
   options: [
     {
       displayName: 'Timeout (Ms)',
