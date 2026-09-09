@@ -434,7 +434,14 @@ Tests stub `helpers.httpRequestWithAuthentication` rather than hitting a live in
 
 ### Publishing
 
-`.github/workflows/publish.yml` publishes to npm on a version change in `package.json`, from CI only — n8n requires every community node to be published by a GitHub action carrying a [provenance](https://docs.npmjs.com/generating-provenance-statements) statement, which a local `npm publish` cannot produce. The job lints, typechecks and tests before it publishes, then runs n8n's `@n8n/scan-community-package` against the published version. It needs one repository secret, `NPM_TOKEN` (an npm automation token with publish rights on the `@synergyconsulting` scope).
+`.github/workflows/publish.yml` publishes to npm, from CI only — n8n requires every community node to be published by a GitHub action carrying a [provenance](https://docs.npmjs.com/generating-provenance-statements) statement, which a local `npm publish` cannot produce. It runs `npm run release`, which lints and builds before it publishes.
+
+It starts in two ways:
+
+- **On a version tag push** matching `*.*.*` (this repository tags bare versions, e.g. `1.4.0`, with no `v` prefix). `npm run release` bumps, tags and pushes for you.
+- **By hand**: Actions → *Publish* → **Run workflow**, with an optional `ref` input naming the tag (or branch) to publish from — for a tag pushed before the workflow existed, a retry after a failed publish, or a release tagged locally. Left empty, it publishes the ref the run was started from.
+
+Authentication is either npm [Trusted Publishing](https://docs.npmjs.com/trusted-publishers) over GitHub's OIDC (nothing to store — the recommended setup) or an `NPM_TOKEN` repository secret with publish rights on the `@synergyconsulting` scope. The workflow's header comment walks through both.
 
 ### Architecture
 

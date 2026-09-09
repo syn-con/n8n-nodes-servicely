@@ -51,6 +51,17 @@
 #
 # This will lint, build, prompt for a version bump, update the changelog,
 # commit, tag, and push — which triggers this workflow to publish to npm.
+#
+# ─── MANUAL RUN ────────────────────────────────────────────────────────────────
+#
+# The workflow can also be started by hand: Actions → Publish → "Run workflow".
+# That covers the cases the tag trigger cannot — a tag pushed before this
+# workflow existed, a publish that has to be retried after a failure, or a
+# release tagged locally rather than through `npm run release`.
+#
+# It takes one optional input, `ref`: the tag (or branch) to publish from.
+# Leave it empty and the run publishes the ref it was started from, which is
+# whatever the "Use workflow from" dropdown selects.
 
 name: Publish
 
@@ -60,6 +71,13 @@ on:
       # Matches 0.1.0, 1.2.3, 2.0.0-rc.1, etc.
       # See "TAG CONVENTION" above if you prefer tags with a "v" prefix.
       - '*.*.*'
+  # Started by hand — see "MANUAL RUN" above.
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Tag or branch to publish from (empty: the ref this run was started from)'
+        required: false
+        type: string
 
 jobs:
   publish:
@@ -74,6 +92,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The tag the push carried, or the one a manual run names — a manual run
+          # that names none publishes the ref it was started from
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
