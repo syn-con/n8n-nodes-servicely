@@ -306,7 +306,7 @@ The tool is exported under the **node's** name (as `[n8n] <node name>`), so the 
 > **Requires the Servicely package installed on your Servicely instance.** It holds the handler scripts a tool runs, in a `C_n8n_Webhook_Handler` table Servicely does not ship — without it the **Handler** list is empty and no tool can be activated. Contact SYNERGY ([support@synergy.eu](mailto:support@synergy.eu)) for details.
 
 - **Description** — what the tool does and when to call it. Exported with the tool, so the agent reads it when deciding.
-- **Handler Name or ID** — the handler whose script the service desk runs for this tool, required. The list holds the `C_n8n_Webhook_Handler` records SYNERGY provisioned (labelled by `C_Name`, stored by record id); activation registers the selected record's `C_ExecutionScript` as the tool's script, with every `@@WEBHOOK_URL@@` in it replaced by this tool's own webhook URL — so one handler serves every tool. No handler, a record that is gone, or an empty script fails the activation rather than registering a tool that does nothing when the agent calls it.
+- **Handler Name or ID** — the handler whose script the service desk runs for this tool, required. The list holds the instance's `C_n8n_Webhook_Handler` records, labelled by `C_Name` and stored by record id. Set it up in Servicely first — see [Configure the webhook handler](#configure-the-webhook-handler) below.
 
   The endpoint is not configurable: the tool answers on `/webhook/<node id>`, which is also the id it is registered under, so renaming or moving the node never moves it.
 - **Parameters** — the tool's arguments. Each row is a **Param Name**, a **Param Type** (`String`, `Number`, `Integer`, `Boolean`; defaults to String), a **Param Required** toggle (on by default) and a **Param Description** that is exported with the tool.
@@ -330,6 +330,22 @@ The tool is exported under the **node's** name (as `[n8n] <node name>`), so the 
 - **Options → Production Restricted** — whether the tool is kept out of production environments. When on, it cannot be selected, executed or modified on a production system — for keeping an AI from, say, changing the schema of a live instance.
 
   These three share one rule: **an option you never add is left alone, an option you add is written as it stands.** Adding Roles and selecting nothing empties the tool's roles; adding a toggle and leaving it off writes `false`. Never adding them leaves whatever the service desk holds untouched, so a flag set there by hand survives every activation. (n8n keeps a collection option a workflow added even when its value equals the option's default, which is what makes "added and off" a different thing from "absent".)
+#### Configure the webhook handler
+
+Before activating the workflow, configure a handler in Servicely:
+
+1. Open **Intelligent automation → Intelligent actions → n8n Webhook Handler**.
+2. Create a new handler, or open an existing one.
+3. Enter a clear **Name** and, optionally, a **Description**.
+4. Set **Active** to *Yes*.
+5. Add the request logic to **Execution Script**. The script must contain the `@@WEBHOOK_URL@@` placeholder. Do not replace this placeholder manually — the n8n node replaces it with the workflow's webhook URL during activation.
+6. Save the handler.
+7. Return to n8n and select it in **Handler Name or ID**.
+
+The handler can be reused by multiple n8n tools, because each workflow inserts its own webhook URL when it is activated.
+
+Workflow activation fails if the selected handler no longer exists, is inactive, has an empty script, or does not contain the required placeholder.
+
 None of the fields take an expression. The node has no input, and its values are read on activation — when there is no execution to resolve one against.
 
 The emitted item carries `body`, `parameters` (the declared arguments the call actually sent, after coercion), `headers`, `query`, `params`, `validation`, and — with a JWT credential — the verified `jwt` payload.

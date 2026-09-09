@@ -138,6 +138,11 @@ function isTestRegistration(ctx: IHookFunctions): boolean {
  * is what lets one handler script serve every tool, each of them still posting to
  * its own endpoint.
  *
+ * A script carrying no placeholder at all is refused rather than registered: it
+ * names no endpoint, so whatever it does, it does not call *this* workflow — and a
+ * handler written for one tool with its URL pasted in would silently answer for
+ * every other tool that selects it.
+ *
  * Always the *production* URL, even when a test listen is what triggered the
  * registration: the script decides at call time which endpoint it wants (a script
  * that honours `IsLiveRun` rewrites the segment when it is false), so handing it a
@@ -153,7 +158,13 @@ function isTestRegistration(ctx: IHookFunctions): boolean {
 async function executionScript(ctx: IHookFunctions): Promise<string> {
 	const script = await readHandlerScript(ctx);
 	if (!URL_PLACEHOLDERS.some((placeholder) => script.includes(placeholder))) {
-		return script;
+		throw new NodeOperationError(
+			ctx.getNode(),
+			`The selected webhook handler's script does not contain ${URL_PLACEHOLDERS[0]}`,
+			{
+				description: `Put ${URL_PLACEHOLDERS[0]} in the handler's script where the endpoint goes — activation replaces it with this tool's webhook URL. A script naming no endpoint would not call this workflow.`,
+			},
+		);
 	}
 
 	const url = ctx.getNodeWebhookUrl(WEBHOOK_NAME);

@@ -366,12 +366,59 @@ describe('create', () => {
 	it('reads the script from a record answered as a single-item list', async () => {
 		const ctx = makeHookCtx({
 			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
-			handler: [{ id: HANDLER_ID, C_ExecutionScript: 'servicely.log("called")' }] as never,
+			handler: [
+				{ id: HANDLER_ID, C_ExecutionScript: 'servicely.log(@@WEBHOOK_URL@@)' },
+			] as never,
 		});
 
 		await createTool.call(ctx);
 
-		expect(ctx.calls[1].body).toMatchObject({ ExecutionScript: 'servicely.log("called")' });
+		expect(ctx.calls[1].body).toMatchObject({
+			ExecutionScript: `servicely.log('${WEBHOOK_URL}')`,
+		});
+	});
+
+	// An active handler is the only one the service desk would run, and the field is
+	// the form's own Active toggle.
+	it('refuses to register a tool whose handler is switched off', async () => {
+		const ctx = makeHookCtx({
+			handler: { id: HANDLER_ID, C_Active: false, C_ExecutionScript: HANDLER_SCRIPT },
+		});
+
+		await expect(createTool.call(ctx)).rejects.toThrow(
+			`The selected webhook handler (${HANDLER_ID}) is not active`,
+		);
+		expect(ctx.calls).toHaveLength(0);
+	});
+
+	it('reads the Active field however the instance spells it', async () => {
+		for (const value of ['No', 'false', '0']) {
+			const ctx = makeHookCtx({
+				handler: { id: HANDLER_ID, C_Active: value, C_ExecutionScript: HANDLER_SCRIPT },
+			});
+
+			await expect(createTool.call(ctx)).rejects.toThrow('is not active');
+		}
+
+		// "Yes", and a field the instance does not keep at all, both mean active
+		for (const record of [
+			{ id: HANDLER_ID, C_Active: 'Yes', C_ExecutionScript: HANDLER_SCRIPT },
+			{ id: HANDLER_ID, C_ExecutionScript: HANDLER_SCRIPT },
+		]) {
+			const ctx = makeHookCtx({ responses: [ok([TOOL]), ok({ id: 'tool-9' })], handler: record });
+
+			await expect(createTool.call(ctx)).resolves.toBe(true);
+		}
+	});
+
+	// A script naming no endpoint does not call this workflow, whatever else it does
+	it('refuses to register a script with no placeholder in it', async () => {
+		const ctx = makeHookCtx({ handlerScript: 'servicely.log("called")' });
+
+		await expect(createTool.call(ctx)).rejects.toThrow(
+			"script does not contain @@WEBHOOK_URL@@",
+		);
+		expect(ctx.calls).toHaveLength(0);
 	});
 
 	// Nothing is written before the script is in hand: a tool registered without one

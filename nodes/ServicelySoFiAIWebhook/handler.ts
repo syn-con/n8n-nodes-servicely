@@ -39,6 +39,26 @@ const HANDLER_NAME_FIELD = 'C_Name';
 /** Field holding the script itself, which is what the tool is registered with. */
 const HANDLER_SCRIPT_FIELD = 'C_ExecutionScript';
 
+/** Field saying whether the handler may be used at all. */
+const HANDLER_ACTIVE_FIELD = 'C_Active';
+
+/**
+ * Whether the handler's `C_Active` says yes. The field is written by the service
+ * desk, so it can arrive as a boolean, as a number, or as the word the form shows;
+ * anything else — the field absent, or an instance that does not keep one — reads
+ * as active, since "no such column" is not the same as "switched off".
+ */
+function isActive(record: ServicelyRecord): boolean {
+	const value = record[HANDLER_ACTIVE_FIELD];
+	if (value === undefined || value === null || value === '') {
+		return true;
+	}
+	if (typeof value === 'string') {
+		return !['false', 'no', '0', 'inactive'].includes(value.trim().toLowerCase());
+	}
+	return Boolean(value);
+}
+
 /** Name of the node parameter holding the selected handler's record id. */
 const HANDLER_PARAMETER = 'handler';
 
@@ -84,7 +104,7 @@ export const handlerProperty: INodeProperties = {
 	default: '',
 	required: true,
 	description:
-		'The Servicely webhook handler whose script this tool runs when the agent calls it. The list shows C_n8n_Webhook_Handler records by name; the handler is stored by its record ID, and its script is read on activation and registered as the tool\'s Execution Script. Every "@@WEBHOOK_URL@@" in that script is replaced with this tool\'s webhook URL, so one handler can serve every tool and needs no editing when it moves between instances. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+		'The Servicely webhook handler whose script this tool runs when the agent calls it. Set it up in Servicely first: Intelligent automation > Intelligent actions > n8n Webhook Handler, with Active set to Yes and an Execution Script containing the "@@WEBHOOK_URL@@" placeholder — activation replaces it with this tool\'s own webhook URL, so one handler serves every tool and is never edited per workflow. Activating fails if the selected handler is gone, is inactive, has an empty script, or has no placeholder in it. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 };
 
 /** The handler record's id, as the node stores it. */
@@ -148,7 +168,18 @@ export async function readHandlerScript(ctx: IHookFunctions): Promise<string> {
 		);
 	}
 
-	const script = firstRecord(found.value)?.[HANDLER_SCRIPT_FIELD];
+	const record = firstRecord(found.value) ?? ({ id } as ServicelyRecord);
+	if (!isActive(record)) {
+		throw new NodeOperationError(
+			ctx.getNode(),
+			`The selected webhook handler (${id}) is not active`,
+			{
+				description: `Set ${HANDLER_ACTIVE_FIELD} to Yes on the handler in Servicely, or select one that is active.`,
+			},
+		);
+	}
+
+	const script = record[HANDLER_SCRIPT_FIELD];
 	if (typeof script !== 'string' || script.trim() === '') {
 		throw new NodeOperationError(
 			ctx.getNode(),

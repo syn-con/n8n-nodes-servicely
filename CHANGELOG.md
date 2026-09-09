@@ -7,6 +7,26 @@ All notable changes to this project are documented here.
 > release, so the durable home for migration notes is the **Compatibility**
 > section of `README.md`.
 
+## 1.6.0
+
+### Added
+
+- **The README says how to configure a webhook handler**: where the form lives in
+  Servicely, what to fill in, and that the `@@WEBHOOK_URL@@` placeholder is left
+  alone for activation to replace.
+
+### Changed
+
+- **Activation now checks the handler the way those instructions describe it.** On
+  top of a handler that is missing, gone, or holds an empty script, two more cases
+  fail the activation instead of registering a tool that cannot work:
+  - a handler whose `C_Active` says no — the service desk would not run it. A field
+    the instance does not keep at all still reads as active.
+  - a script with no `@@WEBHOOK_URL@@` (or legacy `@@URL@@`) in it. Such a script
+    names no endpoint, so whatever it does, it does not call *this* workflow, and a
+    handler carrying one tool's URL pasted in would silently answer for every other
+    tool selecting it. Until now it was registered as it stood.
+
 ## 1.5.0
 
 ### Changed
