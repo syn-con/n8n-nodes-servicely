@@ -7,34 +7,41 @@ All notable changes to this project are documented here.
 > release, so the durable home for migration notes is the **Compatibility**
 > section of `README.md`.
 
+## 1.8.4
+
+### Changed
+
+- **These notes are written without internal names.** The entries from 1.4.0 on
+  say what changed for a workflow rather than which table, field or type it moved
+  through.
+
 ## 1.8.3
 
 ### Changed
 
 - **The README is written for someone configuring the nodes**, not maintaining
-  them: no endpoint paths, internal table and field names, or design rationale.
-  Every field and option a workflow sets is still documented, as are the handler
-  setup steps and the `ServiceCatalog` controller script, and the Compatibility
-  notes now say what to do rather than what changed inside.
+  them: no endpoints, internal names or design rationale. Every field and option a
+  workflow sets is still documented, as are the handler setup steps and the
+  Service Catalog controller script, and the Compatibility notes now say what to
+  do rather than what changed inside.
 
 ## 1.8.2
 
 ### Changed
 
 - **The Send Response operation no longer presents itself as the AI agent tool.**
-  Its action reads *"Send a webhook response"* and its description *"Answer the
-  agent whose call the SoFi AI Webhook Trigger let in"* — the old wording named a
-  tool that no longer goes by that name. The action itself carries no brand,
-  n8n's lint sentence-casing an action string and mangling "SoFi" in the process.
+  It reads *"Send a webhook response"*, and its description names the SoFi AI
+  Webhook Trigger it answers for — the old wording named a tool that no longer
+  goes by that name.
 
 ## 1.8.1
 
 ### Changed
 
-- **The package requirement is stated once, in the credential.** The trigger's own
-  notice is gone — the credential modal is where both halves of the setup are
-  configured — and the credential's reads *"Ensure the Servicely SoFi AI Webhook
-  package is installed in the target system"*, with a link for the details.
+- **The package requirement is stated once, in the credential**, which is where
+  both halves of the setup are configured. The trigger's own notice is gone, and
+  the credential's reads *"Ensure the Servicely SoFi AI Webhook package is
+  installed in the target system"*, with a link for the details.
 
 ## 1.8.0
 
@@ -43,48 +50,40 @@ All notable changes to this project are documented here.
 - **The responder's resource is called *SoFi AI Webhook*.** 1.5.0 renamed the
   trigger and left the resource answering it as *AI Agent Tool*, so the two halves
   of one feature read as two in the editor. The **Respond** notices and the wiring
-  errors follow the new label — `No Servicely node set to "SoFi AI Webhook" found
-  in the workflow` — and the entry sorts last in the **Resource** dropdown, the
-  list being alphabetical by label.
+  errors follow the new label, and the entry sorts last in the **Resource**
+  dropdown, that list being alphabetical.
 
-  The resource *value* is still `aiAgentTool`, so a saved workflow keeps the
-  resource it selected and needs no edit; `nodes/Servicely/actions/aiAgentTool/`
-  keeps its name for the same reason, the router finding a resource's folder by
-  that value.
+  A label change only: a saved workflow keeps the resource it selected and needs
+  no edit.
 
 ## 1.7.0
 
 ### Changed
 
 - **On Validation Error is an option rather than a field of its own.** It sits in
-  the trigger's **Options** collection, where an option nobody added means the
-  strict answer — a `400` carrying the validation errors — which is what the field
-  defaulted to.
+  the trigger's **Options**, where leaving it out means the strict answer — the
+  call rejected with its validation errors — which is what the field defaulted to.
 
-  **A workflow that had set it to *Run Workflow Anyway* loses that**: the value was
-  stored against the node and is read out of the collection now, so such a workflow
-  rejects an invalid call again until the option is added and set back. A workflow
-  left on the default needs no edit.
+  **A workflow that had set it to *Run Workflow Anyway* loses that** and rejects
+  invalid calls again until the option is added and set back. A workflow left on
+  the default needs no edit.
 
 ## 1.6.0
 
 ### Added
 
 - **The README says how to configure a webhook handler**: where the form lives in
-  Servicely, what to fill in, and that the `@@WEBHOOK_URL@@` placeholder is left
-  alone for activation to replace.
+  Servicely, what to fill in, and that the address placeholder is left alone for
+  activation to replace.
 
 ### Changed
 
 - **Activation now checks the handler the way those instructions describe it.** On
-  top of a handler that is missing, gone, or holds an empty script, two more cases
-  fail the activation instead of registering a tool that cannot work:
-  - a handler whose `C_Active` says no — the service desk would not run it. A field
-    the instance does not keep at all still reads as active.
-  - a script with no `@@WEBHOOK_URL@@` (or legacy `@@URL@@`) in it. Such a script
-    names no endpoint, so whatever it does, it does not call *this* workflow, and a
-    handler carrying one tool's URL pasted in would silently answer for every other
-    tool selecting it. Until now it was registered as it stood.
+  top of a handler that is missing or holds an empty script, two more cases fail
+  the activation instead of registering a tool that cannot work: a handler that is
+  not active, which the service desk would not run; and a script with no address
+  placeholder in it, which would not call this workflow — and, if someone pasted
+  one tool's address in, would silently answer for every other tool selecting it.
 
 ## 1.5.0
 
@@ -92,57 +91,42 @@ All notable changes to this project are documented here.
 
 - **The AI Agent Tool trigger is now the *Servicely SoFi AI Webhook Trigger*.** A
   display-name change, reaching everything the feature is called to a person: the
-  entry in the nodes panel, the name a dropped node gets on the canvas (so a new
-  node registers its tool as `[n8n] Servicely SoFi AI Webhook`), and the endpoint
-  credential's label, **Servicely SoFi AI Webhook Auth API**.
+  entry in the nodes panel, the name a dropped node takes on the canvas, and the
+  endpoint credential's label, **Servicely SoFi AI Webhook Auth API**.
 
-  Nothing a workflow names moved: the node type is still
-  `servicelyAiAgentToolTrigger`, the credential is still `servicelyAiToolAuthApi`,
-  and the responder is still **Servicely -> AI Agent Tool -> Send Response** with
-  its `aiAgentTool` resource value. A saved workflow keeps working untouched, and a
-  node left at the old default canvas name keeps that name — and so keeps
-  registering `[n8n] Servicely AI Agent Tool` — until it is renamed by hand.
+  Nothing a workflow names moved, so a saved workflow keeps working untouched. A
+  node left at the old default canvas name keeps that name, and keeps registering
+  its tool under it, until it is renamed by hand.
 
 - **The trigger's Prompt field is now called Description.** A label change only —
-  the value is stored under the same name and still registers as the tool's
-  `SelectionPrompt`, so a saved workflow keeps the text it had.
+  a saved workflow keeps the text it had.
 
 - **Both the trigger and its credential say what the instance needs.** A notice on
-  each states that the Servicely package has to be installed on the instance and
-  points at SYNERGY, since an instance without it shows an empty **Handler** list
-  and nothing else to explain it.
+  each states that the Servicely package has to be installed, since an instance
+  without it shows an empty **Handler** list and nothing else to explain it.
 
-- **Files and classes follow the name.** `nodes/ServicelyAITool/` is now
-  `nodes/ServicelySoFiAIWebhook/`, its node is `ServicelySoFiAIWebhookTrigger`, and
-  the credential is `ServicelySoFiAIWebhookAuthApi` in
-  `credentials/ServicelySoFiAIWebhookAuthApi.credentials.ts`. Renames only: the
-  credential's `name` is still `servicelyAiToolAuthApi` and the node's type is still
-  `servicelyAiAgentToolTrigger`, so existing credentials stay attached and saved
-  workflows keep working.
+- **The package's files and classes follow the new name.** Renames only: existing
+  credentials stay attached and saved workflows keep working.
+
 
 ## 1.4.0
 
 ### Changed
 
-- **The AI Agent Tool trigger runs a handler script kept on the instance.**
-  **Options -> Execution Script** and **Path** are removed; a required **Handler**
-  selector replaces them, loaded from the instance's `C_n8n_Webhook_Handler`
-  table (labelled by `C_Name`, stored by record id). Activation fetches that
-  record, takes its `C_ExecutionScript`, and registers it as the tool's
-  `ExecutionScript` with every `@@WEBHOOK_URL@@` resolved to this tool's webhook
-  URL -- so one handler script serves every tool, each still posting to its own
-  endpoint, and a script edited in the service desk reaches every tool that
-  selects it on the next activation.
+- **The trigger runs a handler script kept in Servicely.** The **Execution Script**
+  and **Path** fields are removed; a required **Handler** selector replaces them,
+  offering the handlers configured on the instance. Activating the workflow reads
+  the selected handler's script and registers it as the tool's script, with this
+  workflow's own webhook address written into it — so one handler can serve every
+  tool, and a handler edited in Servicely reaches each tool that selects it on the
+  next activation.
 
-  Nothing is written before that script is in hand: no handler selected, a record
-  that is not there, or a record with an empty script fails the activation rather
-  than registering a tool that does nothing when the agent calls it.
+  Nothing is registered without a script: no handler selected, one that is not
+  there, or one with an empty script fails the activation rather than registering
+  a tool that does nothing when the agent calls it.
 
-  With **Path** gone the tool answers on `/webhook/<node id>` -- the same node id
-  it is registered under, so renaming or moving the node no longer moves the URL
-  the handler's script was given. **An active workflow's endpoint moves, and a
-  script written in the node is dropped**; see **Compatibility** in `README.md`
-  for what to do about both.
+  **An active workflow's endpoint moves, and a script written in the node is
+  dropped** — see **Compatibility** in `README.md` for what to do about both.
 
 ## 1.3.1
 
