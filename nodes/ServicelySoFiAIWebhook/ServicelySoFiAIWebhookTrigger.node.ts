@@ -49,7 +49,7 @@ const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
  * endpoint and validates the request body against those parameters before the
  * workflow starts.
  */
-export class ServicelyAIToolTrigger implements INodeType {
+export class ServicelySoFiAIWebhookTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		// Says "Trigger" because that is how the node creator recognises one; the node
 		// it drops is still called `defaults.name` below, which is what registers.
@@ -85,7 +85,7 @@ export class ServicelyAIToolTrigger implements INodeType {
 				// Decides what a caller has to present; the endpoint is never public.
 				// Spelled out rather than taken from AUTH_CREDENTIAL_NAME / _TEST: n8n's
 				// verification scan reads this array statically and only sees literals.
-				// `__tests__/ServicelyAIToolTrigger.node.test.ts` holds the two in step.
+				// `__tests__/ServicelySoFiAIWebhookTrigger.node.test.ts` holds the two in step.
 				name: 'servicelyAiToolAuthApi',
 				'displayName': AUTH_DISPLAY_NAME,
 				required: true,
@@ -116,13 +116,23 @@ export class ServicelyAIToolTrigger implements INodeType {
 		properties: [
 			{
 				displayName:
+					'Requires the Servicely package installed on your Servicely instance: it holds the handler scripts this tool runs, and the Handler list below is empty without it. Contact SYNERGY for details.',
+				name: 'packageNotice',
+				type: 'notice',
+				default: '',
+			},
+			{
+				displayName:
 					'The attached Servicely SoFi AI Webhook Auth credential decides what a caller has to present: Basic, Header or JWT authentication.',
 				name: 'authenticationNotice',
 				type: 'notice',
 				default: '',
 			},
 			{
-				displayName: 'Prompt',
+				// Called "Prompt" until 1.5.0. The stored name is unchanged — it is what a
+				// saved workflow holds the text under, and what registers as the tool's
+				// `SelectionPrompt`.
+				displayName: 'Description',
 				name: 'prompt',
 				type: 'string',
 				noDataExpression: true,

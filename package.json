@@ -30,12 +30,12 @@
     "strict": true,
     "credentials": [
       "dist/credentials/ServicelyApi.credentials.js",
-      "dist/credentials/ServicelyAIToolAuthApi.credentials.js"
+      "dist/credentials/ServicelySoFiAIWebhookAuthApi.credentials.js"
     ],
     "nodes": [
       "dist/nodes/Servicely/Servicely.node.js",
       "dist/nodes/Servicely/ServicelyTrigger.node.js",
-      "dist/nodes/ServicelyAITool/ServicelyAIToolTrigger.node.js"
+      "dist/nodes/ServicelySoFiAIWebhook/ServicelySoFiAIWebhookTrigger.node.js"
     ]
   },
   "scripts": {

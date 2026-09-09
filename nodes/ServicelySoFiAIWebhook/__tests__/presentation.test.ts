@@ -12,10 +12,10 @@ import {
 	TRIGGER_DISPLAY_NAME,
 	TRIGGER_NODE_TYPE,
 } from '../presentation';
-import { ServicelyAIToolTrigger } from '../ServicelyAIToolTrigger.node';
+import { ServicelySoFiAIWebhookTrigger } from '../ServicelySoFiAIWebhookTrigger.node';
 
 const action = new Servicely().description;
-const trigger = new ServicelyAIToolTrigger().description;
+const trigger = new ServicelySoFiAIWebhookTrigger().description;
 
 /** The options of a selector, by name. */
 function options(name: string): INodePropertyOptions[] {

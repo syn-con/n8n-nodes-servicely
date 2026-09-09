@@ -5,9 +5,9 @@ import { describe, expect, it } from 'vitest';
 import { getAiAgents, getRoles } from '../../Servicely/SearchFunctions';
 import { AUTH_CREDENTIAL_NAME, AUTH_CREDENTIAL_TEST } from '../authentication';
 import { getWebhookHandlers } from '../handler';
-import { ServicelyAIToolTrigger } from '../ServicelyAIToolTrigger.node';
+import { ServicelySoFiAIWebhookTrigger } from '../ServicelySoFiAIWebhookTrigger.node';
 
-const node = new ServicelyAIToolTrigger();
+const node = new ServicelySoFiAIWebhookTrigger();
 
 /** The response node, as n8n types it once the package is installed. */
 /** The Servicely action node set to answer the call, as `getChildNodes` reports it. */
@@ -168,6 +168,18 @@ describe('node description', () => {
 		expect(named).not.toContain('toolName');
 		expect(named).not.toContain('path');
 		expect(property('prompt').required).toBe(true);
+		// Renamed in 1.5.0; the stored name is what a saved workflow holds it under
+		expect(property('prompt').displayName).toBe('Description');
+	});
+
+	// The handler scripts come from a Servicely-side package, so the panel says where
+	// they come from rather than leaving an empty Handler list unexplained.
+	it('notes that the Servicely package has to be installed', () => {
+		const notice = node.description.properties.find((entry) => entry.name === 'packageNotice');
+
+		expect(notice?.type).toBe('notice');
+		expect(notice?.displayName).toContain('Requires the Servicely package');
+		expect(notice?.displayName).toContain('SYNERGY');
 	});
 
 	// The tool is registered under the node id, and answers on it too — so renaming

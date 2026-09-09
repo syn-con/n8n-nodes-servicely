@@ -5,7 +5,7 @@
 // fields the chosen type needs are filled in and usable (see `authentication.ts`).
 import type { Icon, ICredentialType, INodeProperties } from 'n8n-workflow';
 
-export class ServicelyAIToolAuthApi implements ICredentialType {
+export class ServicelySoFiAIWebhookAuthApi implements ICredentialType {
 	name = 'servicelyAiToolAuthApi';
 
 	displayName = 'Servicely SoFi AI Webhook Auth API';
@@ -15,6 +15,16 @@ export class ServicelyAIToolAuthApi implements ICredentialType {
 	documentationUrl = 'https://docs-servicely.atlassian.net/wiki/spaces/SD/pages/2242478081';
 
 	properties: INodeProperties[] = [
+		{
+			// The endpoint this credential guards is only half the feature: the scripts the
+			// service desk runs for a tool come from a Servicely-side package, so the modal
+			// says so rather than leaving an empty Handler list on the node to explain it
+			displayName:
+				'Requires the Servicely package installed on your Servicely instance. Contact SYNERGY for details.',
+			name: 'packageNotice',
+			type: 'notice',
+			default: '',
+		},
 		{
 			displayName: 'Type',
 			name: 'type',

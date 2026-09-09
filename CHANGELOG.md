@@ -24,6 +24,23 @@ All notable changes to this project are documented here.
   node left at the old default canvas name keeps that name — and so keeps
   registering `[n8n] Servicely AI Agent Tool` — until it is renamed by hand.
 
+- **The trigger's Prompt field is now called Description.** A label change only —
+  the value is stored under the same name and still registers as the tool's
+  `SelectionPrompt`, so a saved workflow keeps the text it had.
+
+- **Both the trigger and its credential say what the instance needs.** A notice on
+  each states that the Servicely package has to be installed on the instance and
+  points at SYNERGY, since an instance without it shows an empty **Handler** list
+  and nothing else to explain it.
+
+- **Files and classes follow the name.** `nodes/ServicelyAITool/` is now
+  `nodes/ServicelySoFiAIWebhook/`, its node is `ServicelySoFiAIWebhookTrigger`, and
+  the credential is `ServicelySoFiAIWebhookAuthApi` in
+  `credentials/ServicelySoFiAIWebhookAuthApi.credentials.ts`. Renames only: the
+  credential's `name` is still `servicelyAiToolAuthApi` and the node's type is still
+  `servicelyAiAgentToolTrigger`, so existing credentials stay attached and saved
+  workflows keep working.
+
 ## 1.4.0
 
 ### Changed

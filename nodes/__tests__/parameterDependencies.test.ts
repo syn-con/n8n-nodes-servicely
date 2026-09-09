@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { Servicely } from '../Servicely/Servicely.node';
 import { ServicelyTrigger } from '../Servicely/ServicelyTrigger.node';
-import { ServicelyAIToolTrigger } from '../ServicelyAITool/ServicelyAIToolTrigger.node';
+import { ServicelySoFiAIWebhookTrigger } from '../ServicelySoFiAIWebhook/ServicelySoFiAIWebhookTrigger.node';
 
 /**
  * Guards on what a `displayOptions` condition is allowed to name, for every node
@@ -34,7 +34,7 @@ import { ServicelyAIToolTrigger } from '../ServicelyAITool/ServicelyAIToolTrigge
 const NODES: Array<[string, INodeTypeDescription]> = [
   ['Servicely', new Servicely().description],
   ['ServicelyTrigger', new ServicelyTrigger().description],
-  ['ServicelyAIToolTrigger', new ServicelyAIToolTrigger().description],
+  ['ServicelySoFiAIWebhookTrigger', new ServicelySoFiAIWebhookTrigger().description],
 ];
 
 /** Whether a `collection`/`fixedCollection` entry is a parameter rather than an option. */

@@ -200,8 +200,8 @@ function missingTableError(ctx: IHookFunctions, table: string): NodeOperationErr
 		`Could not write to "${table}" on this Servicely instance`,
 		{
 			description: isTool
-				? `POST /v1/${table} answered 404, so the instance has no such table. Confirm the table it keeps AI tools in and set TOOL_TABLE in nodes/ServicelyAITool/registration.ts to match.`
-				: `The tool itself registered, but writing its parameters to /v1/${table} answered 404. Either the instance keeps an AI tool's arguments in a differently-named table (PARAMETER_TABLE in nodes/ServicelyAITool/registration.ts) or it did not accept "${PARAMETER_PARENT_FIELD}" as the reference back to the tool (PARAMETER_PARENT_FIELD).`,
+				? `POST /v1/${table} answered 404, so the instance has no such table. Confirm the table it keeps AI tools in and set TOOL_TABLE in nodes/ServicelySoFiAIWebhook/registration.ts to match.`
+				: `The tool itself registered, but writing its parameters to /v1/${table} answered 404. Either the instance keeps an AI tool's arguments in a differently-named table (PARAMETER_TABLE in nodes/ServicelySoFiAIWebhook/registration.ts) or it did not accept "${PARAMETER_PARENT_FIELD}" as the reference back to the tool (PARAMETER_PARENT_FIELD).`,
 		},
 	);
 }

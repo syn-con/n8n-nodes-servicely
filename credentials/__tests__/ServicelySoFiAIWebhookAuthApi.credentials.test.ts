@@ -1,9 +1,9 @@
 import type { INodeProperties } from 'n8n-workflow';
 import { describe, expect, it } from 'vitest';
 
-import { ServicelyAIToolAuthApi } from '../ServicelyAIToolAuthApi.credentials';
+import { ServicelySoFiAIWebhookAuthApi } from '../ServicelySoFiAIWebhookAuthApi.credentials';
 
-const credential = new ServicelyAIToolAuthApi();
+const credential = new ServicelySoFiAIWebhookAuthApi();
 
 const property = (name: string): INodeProperties => {
   const found = credential.properties.find((entry) => entry.name === name);
@@ -20,6 +20,16 @@ describe('shape', () => {
   it('is registered under the name the AI Tool node asks for', () => {
     expect(credential.name).toBe('servicelyAiToolAuthApi');
     expect(credential.displayName).toBe('Servicely SoFi AI Webhook Auth API');
+  });
+
+  // Half the feature lives on the instance, so the modal says where it comes from.
+  it('notes that the Servicely package has to be installed', () => {
+    const notice = property('packageNotice');
+
+    expect(notice.type).toBe('notice');
+    expect(notice.displayName).toBe(
+      'Requires the Servicely package installed on your Servicely instance. Contact SYNERGY for details.',
+    );
   });
 
   it('offers the three authentication methods the node implements', () => {

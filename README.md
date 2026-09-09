@@ -6,7 +6,7 @@
 
 An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform. It talks to the Servicely JSON REST API (v1) so your workflows can read and write records on any table (Incident, Request, User, Group, …), manage file attachments, run a full-text Global Search, raise requests against the service catalog, and call instance controllers directly. A companion **Servicely Trigger** node starts workflows on a schedule by dequeuing async-queue messages or polling a table by filter, and the **Servicely SoFi AI Webhook** pair exposes a workflow as a tool the service desk agent can call.
 
-[Installation](#installation) · [Credentials](#credentials) · [Operations](#operations) · [Trigger](#trigger) · [SoFi AI Webhook](#sofi-ai-webhook) · [Examples](#examples) · [Compatibility](#compatibility) · [Development](#development)
+[Installation](#installation) · [Credentials](#credentials) · [Operations](#operations) · [Trigger](#trigger) · [SoFi AI Webhook](#sofi-ai-webhook) · [Examples](#examples) · [Compatibility](#compatibility)
 
 ---
 
@@ -301,18 +301,14 @@ The two jobs cannot live on one node: n8n opens a webhook for every instance of 
 
 ### Servicely SoFi AI Webhook (trigger)
 
-The tool is exported under the **node's** name (as `[n8n] <node name>`), so the node asks for no name of its own — rename the node on the canvas and the next activation renames the tool. One node is one tool, so a workflow can declare several by holding several AI Agent Tool nodes; name them after what they do, since two nodes both left at the default "Servicely AI Agent Tool" register two tools the agent cannot tell apart.
+The tool is exported under the **node's** name (as `[n8n] <node name>`), so the node asks for no name of its own — rename the node on the canvas and the next activation renames the tool. One node is one tool, so a workflow can declare several by holding several SoFi AI Webhook nodes; name them after what they do, since two nodes both left at the default "Servicely SoFi AI Webhook" register two tools the agent cannot tell apart.
 
-- **Prompt** — what the tool does and when to call it. Exported with the tool, so the agent reads it when deciding.
-- **Handler Name or ID** — the Servicely webhook handler whose script this tool runs, required. The list is loaded from the instance's `C_n8n_Webhook_Handler` table, each entry labelled by its `C_Name` and stored by its record id; a table that cannot be read leaves the list empty. On activation the record is fetched by that id and its `C_ExecutionScript` is registered as the tool's `ExecutionScript`, with every `@@WEBHOOK_URL@@` in it replaced by *this* tool's webhook URL — so one handler script serves every tool, each still posting to its own endpoint. Nothing is written before that script is in hand: no handler selected, a record that is not there, or a record with an empty script all fail the activation rather than register a tool that does nothing when the agent calls it. Re-activating picks up a handler edited in the service desk.
+> **Requires the Servicely package installed on your Servicely instance.** It holds the handler scripts a tool runs, in a `C_n8n_Webhook_Handler` table Servicely does not ship — without it the **Handler** list is empty and no tool can be activated. Contact SYNERGY ([support@synergy.eu](mailto:support@synergy.eu)) for details.
 
-  Every `@@WEBHOOK_URL@@` is resolved the same way it always was:
-  - It is always the **production** URL, even when a "Listen for test event" is what registered the tool. The script chooses its endpoint at call time — one that honours `IsLiveRun` rewrites `/webhook/` to `/webhook-test/` when it is false — so handing it a test URL would leave it deriving a test URL from a test URL.
-  - A bare `@@WEBHOOK_URL@@` comes out in single quotes; one the script already wrapped in `'`, `"` or `` ` `` keeps the quotes it was written with, so `post('@@WEBHOOK_URL@@')` gives `post('https://…')` rather than a doubled pair.
-  - A script that uses `@@WEBHOOK_URL@@` when n8n cannot resolve the URL fails the activation rather than registering a broken script.
-  - `@@URL@@`, what the placeholder was called before it said what it stood for, is still resolved the same way, so a script written against it keeps working. New scripts should use `@@WEBHOOK_URL@@`.
+- **Description** — what the tool does and when to call it. Exported with the tool, so the agent reads it when deciding.
+- **Handler Name or ID** — the handler whose script the service desk runs for this tool, required. The list holds the `C_n8n_Webhook_Handler` records SYNERGY provisioned (labelled by `C_Name`, stored by record id); activation registers the selected record's `C_ExecutionScript` as the tool's script, with every `@@WEBHOOK_URL@@` in it replaced by this tool's own webhook URL — so one handler serves every tool. No handler, a record that is gone, or an empty script fails the activation rather than registering a tool that does nothing when the agent calls it.
 
-  The endpoint itself is not configurable: the tool answers on `/webhook/<node id>`, the same node id it is registered under, so renaming or moving the node never moves the URL the handler's script was given.
+  The endpoint is not configurable: the tool answers on `/webhook/<node id>`, which is also the id it is registered under, so renaming or moving the node never moves it.
 - **Parameters** — the tool's arguments. Each row is a **Param Name**, a **Param Type** (`String`, `Number`, `Integer`, `Boolean`; defaults to String), a **Param Required** toggle (on by default) and a **Param Description** that is exported with the tool.
   - A **required** argument the call leaves out is rejected. Turn the toggle off and the call runs without it — the workflow then sees the argument *absent* from `parameters` rather than present as `null`, so its meaning is the workflow's to decide.
   - Only the presence check turns off. An argument that *is* sent is held to its declared type whether or not it had to be sent: optional means the agent may leave it out, not that it may get it wrong.
@@ -344,7 +340,7 @@ The node takes two credentials, both required: the **Servicely API** one (it bac
 
 Activating the workflow registers it as a tool; deactivating removes it. n8n drives this through the webhook lifecycle hooks, so it happens on activate/deactivate — never on a manual execution.
 
-- **On activate** the registration is upserted against a `SystemAITool` record whose **Key** is the n8n **node** id: a new record gets `Key` = the node id, `Name` = `[n8n] <node name>`, `Active` = `true`, `SelectionPrompt` = the node's **Prompt**, `TimeoutSeconds` = the node's **Tool Timeout** (how long the *service desk* waits for a call to be answered — n8n itself holds the request open for as long as the workflow runs; an unusable value, such as an emptied box, registers as the default 60), `ExecutionScript` = the node's script with its URL placeholder resolved, and a `Description` naming where it came from — the node, the workflow, and a link to that workflow (`Created by the "Create Incident" node of the n8n workflow "My Workflow" (https://n8n.example.com/workflow/abc123)`) — while an existing one is patched with the same fields minus the Key. That keeps activation idempotent: a record left behind by a deactivation that could not reach the instance is updated instead of failing on a duplicate Key.
+- **On activate** the registration is upserted against a `SystemAITool` record whose **Key** is the n8n **node** id: a new record gets `Key` = the node id, `Name` = `[n8n] <node name>`, `Active` = `true`, `SelectionPrompt` = the node's **Description**, `TimeoutSeconds` = the node's **Tool Timeout** (how long the *service desk* waits for a call to be answered — n8n itself holds the request open for as long as the workflow runs; an unusable value, such as an emptied box, registers as the default 60), `ExecutionScript` = the node's script with its URL placeholder resolved, and a `Description` naming where it came from — the node, the workflow, and a link to that workflow (`Created by the "Create Incident" node of the n8n workflow "My Workflow" (https://n8n.example.com/workflow/abc123)`) — while an existing one is patched with the same fields minus the Key. That keeps activation idempotent: a record left behind by a deactivation that could not reach the instance is updated instead of failing on a duplicate Key.
 - **Three more fields are written only when the node mentions them:** `Roles`, `MutatesTicket` and `ProductionRestricted`, from the options of the same names. Each is a field a service desk may also set by hand, so an option the workflow never added is left as it is rather than overwritten on every activation — while an option that *is* there is sent as it stands, an empty selection and an off toggle included.
 - **The parameters follow the tool.** Each declared parameter becomes a `SystemAIToolParameter` row with `Name`, `Type`, `Description`, `Parent` = the tool's id, and `Order` counting from 10 in steps of 10. **Param Required** is deliberately not among them — it says what this node's webhook rejects, and the parameter table is not asked to carry a column it may not have. On a re-registration the rows are read back by `Parent` and reconciled by name: a new parameter is created, one whose type, description or position moved is patched, a row whose parameter the node no longer declares is deleted, and a row that already matches is left alone. Because `Order` comes from the declared order, reordering the collection in n8n reorders the tool's arguments. The API answers a query that matched nothing with a `404` rather than an empty list, so a `404` on the read back is taken as "no rows yet" — which is what every first registration sees; a `404` on the first *write* is the parameter table not being there under that name, and says so instead.
 - **The agents and assistants follow their selections.** The link lives on the holder — a `SystemAIAgent` or `SystemAIAssistant` holds a `Tools` array — so activation reads each *selected* table once (a registry whose option was never added is skipped without a request) and reconciles it against that table's selection: a record you selected that does not hold the tool is patched to include it, one that holds it but is no longer selected is patched to drop it, and a record already in the right state is not written at all. Linking and unlinking run as two tasks over two disjoint sets, per table, alongside the parameter sync. Entries are compared by id whether the instance stores them as bare ids, as references, or as a serialised list; a `404` on one record's write is that record having gone and is logged rather than failing the activation, and a table that is not there at all reads as "nothing to link".
@@ -393,7 +389,7 @@ A resource of the **Servicely** node, not a node of its own. It is the only reso
 
 **Expose a workflow as an agent tool**
 
-1. **Servicely SoFi AI Webhook Trigger**, renamed on the canvas to *Create Incident* (the tool registers as `[n8n] Create Incident`), Prompt "Creates an incident for a user and returns its number", Handler = your webhook handler, AI Agent Names or IDs = the service desk agent.
+1. **Servicely SoFi AI Webhook Trigger**, renamed on the canvas to *Create Incident* (the tool registers as `[n8n] Create Incident`), Description "Creates an incident for a user and returns its number", Handler = your webhook handler, AI Agent Names or IDs = the service desk agent.
 2. *Parameters:* `shortDescription` (String, required, "What is wrong"), `priority` (Integer, **Param Required** off, "1 highest to 4 lowest — omit for the default").
 3. *Options:* **Mutates Ticket** on, since the call creates a record.
 4. **Servicely → Object → Create**, Table `Incident`, fields taken from `={{ $json.parameters.shortDescription }}` and `={{ $json.parameters.priority }}` — the second is absent when the agent omits it, so give it a default downstream.
@@ -415,125 +411,6 @@ A resource of the **Servicely** node, not a node of its own. It is the only reso
 - Minimum Servicely versions for optional features:
   - **Batch API** (`POST /v1/_batch`): `1.4.2-release.40`+.
   - **Bearer token as URL parameter** and **`moveAttachments`**: `1.10`+.
-
-## Development
-
-```bash
-npm install
-npm run build       # tsc → dist/ (+ copies the node icon)
-npm run build:watch # tsc --watch (recompile on change)
-npm run dev         # build + link into ~/.n8n/custom + start n8n
-npm run typecheck   # tsc --noEmit
-npm run lint        # eslint, including n8n's own node standards
-npm test            # vitest run
-npm run test:coverage
-```
-
-Tests stub `helpers.httpRequestWithAuthentication` rather than hitting a live instance, so the suite runs offline. Coverage is enforced at ≥80% per file (statements, branches, functions, lines).
-
-`npm run lint` runs n8n's own node standards (`eslint-plugin-n8n-nodes-base`, the presets a community node is measured against) alongside the package's rules, so the check a submission faces is the check that runs here. Two rules are turned off in `eslint.config.mjs`, each with its reason: both expect the docs *slug* a credential in n8n's own repository uses, where this package holds the URL that actually helps a reader.
-
-### Publishing
-
-`.github/workflows/publish.yml` publishes to npm, from CI only — n8n requires every community node to be published by a GitHub action carrying a [provenance](https://docs.npmjs.com/generating-provenance-statements) statement, which a local `npm publish` cannot produce. It runs `npm run release`, which lints and builds before it publishes.
-
-It starts in two ways:
-
-- **On a version tag push** matching `*.*.*` (this repository tags bare versions, e.g. `1.4.0`, with no `v` prefix). `npm run release` bumps, tags and pushes for you.
-- **By hand**: Actions → *Publish* → **Run workflow**, with an optional `ref` input naming the tag (or branch) to publish from — for a tag pushed before the workflow existed, a retry after a failed publish, or a release tagged locally. Left empty, it publishes the ref the run was started from.
-
-Authentication is either npm [Trusted Publishing](https://docs.npmjs.com/trusted-publishers) over GitHub's OIDC (nothing to store — the recommended setup) or an `NPM_TOKEN` repository secret with publish rights on the `@synergyconsulting` scope. The workflow's header comment walks through both.
-
-### Architecture
-
-The layout follows n8n's `actions/` router convention: one folder per resource,
-one file per operation.
-
-```
-nodes/Servicely/
-  Servicely.node.ts            # thin shell: description + router
-  ServicelyTrigger.node.ts     # polling trigger (no resource/operation pair)
-  actions/
-    router.ts                  # resolves the operation, owns the item loop
-    versionDescription.ts      # INodeTypeDescription, composed from the resources
-    node.type.ts               # resource → operations union the router narrows on
-    common.descriptions.ts     # property fragments used by more than one operation
-    object/
-      index.ts                 # operation selector + shared Table field
-      create.operation.ts      # each file: its own properties + execute(index)
-      delete.operation.ts
-      get.operation.ts
-      getAll.operation.ts
-      update.operation.ts
-    attachment/
-      index.ts
-      download.operation.ts
-      list.operation.ts
-      upload.operation.ts
-    globalSearch/
-      index.ts
-      request.ts               # the Table + Search Text pair and the POST both share
-      search.operation.ts
-      batchSearch.operation.ts
-    queue/
-      index.ts
-      reply.ts                 # the call both reply operations share
-      replyFailure.operation.ts
-      replySuccess.operation.ts
-    serviceCatalog/
-      index.ts
-      createRequest.operation.ts # one POST to /controller/ServiceCatalog
-    controller/
-      index.ts
-      invoke.operation.ts      # raw POST to /controller/{ControllerName}
-    aiAgentTool/
-      index.ts
-      sendResponse.operation.ts # answers the request a tool call holds open
-  GenericFunctions.ts          # API request helpers + query builders
-  SearchFunctions.ts           # listSearch pickers + loadOptions loaders
-                               #   (fields, AI agents, AI assistants, roles)
-                               #   + the resourceMapping schema for catalog questions
-  constants.ts
-  types.ts
-
-nodes/ServicelyAITool/
-  ServicelyAIToolTrigger.node.ts   # webhook trigger: declares + serves the tool
-  presentation.ts                  # the names, codex and docs the two halves share
-  response.ts                      # the Respond modes, as n8n's Webhook node does them
-  registration.ts                  # webhookMethods: registers the tool + its parameters
-  identity.ts                      # the registered tool's Key, Name and Description
-  parameters.ts                    # reads the declared parameters, for both sides
-  validation.ts                    # the four parameter types, coercion, body check
-  authentication.ts                # Basic / Header / JWT, per the attached credential
-  jwt.ts                           # JWS verification (HS/RS/PS/ES), algorithm pinned
-```
-
-- Each `*.operation.ts` exports `description` (its properties, scoped with `updateDisplayOptions`) and `execute(this, index)` handling **one** item.
-- `router.ts` owns the item loop, `continueOnFail`, and error wrapping, so operations carry no boilerplate.
-- `node.type.ts` makes the resource/operation pairing a compile-time union — an unregistered operation fails to build rather than at runtime.
-- **The package registers one regular node and two triggers**, which is what n8n verification allows: `Servicely` acts, `ServicelyTrigger` and `ServicelyAIToolTrigger` start workflows. Anything that would otherwise want a regular node of its own becomes a resource of `Servicely` instead — which is how `aiAgentTool` got there. The class name has to match the file's base name, since n8n's loader derives the one from the other, so a node file and its class are renamed together or not at all.
-- `nodes/ServicelyAITool/` sits outside the `actions/` convention because the trigger has no resource/operation pair. It keeps only its description and the webhook handler, and everything else lives in the helper modules next to it, which is what makes them directly unit-testable. Two of those are about the feature's two halves agreeing with each other: `presentation.ts` holds the names and codex the trigger shows and the strings that identify the responder, and `response.ts` holds the Respond modes the trigger declares and the `aiAgentTool` resource fulfils — including the check that a workflow set to answer from a Servicely node actually has one.
-- `credentials/ServicelyApi.credentials.ts` — its `authenticate` resolves the instance URL into `baseURL` and signs every request (Basic / Bearer / HMAC), so no node code reads credentials.
-- `SearchFunctions.ts` — every **From List** picker is paginated. Servicely's list endpoints are offset-based, so each picker page returns n8n's `paginationToken` (the next page number) whenever the API filled the page; n8n asks for the next one as the user scrolls. Because the API has no text-search parameter, the typed filter is applied per page — a page emptied by filtering still hands back its token, so matches further in the table are not stranded. The **Table** and **Field Name** pickers are the exception: neither is `searchable`, so n8n loads each registry in one go and filters client-side, and the paging happens internally (bounded, since it runs at design time).
-
-Adding an operation means: add `<name>.operation.ts`, register it in the
-resource's `index.ts` (export + selector option), and add it to `node.type.ts`.
-
-### Passing n8n's verification scan
-
-`npx @n8n/scan-community-package <package>@<version>` is what n8n runs on a published
-version, and it lints the **attested source** — the repository at the commit named in
-the package's npm provenance, tests included — with `allowInlineConfig: false`. An
-`eslint-disable` comment therefore counts for nothing there: a rule has to be
-satisfied by the code, not exempted. `npm run lint:scan` runs the same lint the same
-way locally, so a finding shows up before a release rather than after one.
-
-`npm run lint` (n8n's own CLI) does honour inline comments, so the two disagree by
-design — `lint:scan` is the stricter of the pair and the one that gates verification.
-
-> The scanner's published versions pin `typescript@7` against a `@typescript-eslint`
-> that requires `<6.1`, so `npx` aborts on `ERESOLVE` before running it. Until that is
-> fixed upstream, `lint:scan` is the practical way to get the same answer.
 
 ## Resources
 
