@@ -620,12 +620,12 @@ describe('response mode', () => {
 
 	it('refuses a call the workflow could not answer', async () => {
 		await expect(webhook({ params: { responseMode: 'responseNode' } })).rejects.toThrow(
-			'No Servicely node set to "AI Agent Tool" found in the workflow',
+			'No Servicely node set to "SoFi AI Webhook" found in the workflow',
 		);
 
 		await expect(
 			webhook({ params: { responseMode: 'lastNode' }, children: [RESPONDER] }),
-		).rejects.toThrow('Unused Servicely node set to "AI Agent Tool" found in the workflow');
+		).rejects.toThrow('Unused Servicely node set to "SoFi AI Webhook" found in the workflow');
 	});
 
 	// Checked before anything is read from the request, so a workflow that cannot
@@ -636,6 +636,6 @@ describe('response mode', () => {
 				params: { responseMode: 'responseNode' },
 				credential: { type: 'headerAuth', headerName: 'X-API-KEY', headerValue: 'expected' },
 			}),
-		).rejects.toThrow('No Servicely node set to "AI Agent Tool" found in the workflow');
+		).rejects.toThrow('No Servicely node set to "SoFi AI Webhook" found in the workflow');
 	});
 });

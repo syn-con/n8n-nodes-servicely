@@ -16,7 +16,7 @@ async function run(options: ExecuteCtxOptions) {
 
 describe('node description', () => {
   it('declares every resource and the credential', () => {
-    // Asked for by every resource but AI Agent Tool, which answers the open
+    // Asked for by every resource but SoFi AI Webhook, which answers the open
     // request of a tool call instead of calling the API
     expect(node.description.credentials).toEqual([
       {
@@ -28,14 +28,16 @@ describe('node description', () => {
     const resource = node.description.properties.find((property) => property.name === 'resource');
     // Alphabetical by display name, which is what n8n's own selectors do and what
     // its node lint requires
+    // The value is unchanged by the rename, so the SoFi AI Webhook entry sorts last
+    // by its label while a saved workflow still holds "aiAgentTool"
     expect(resource?.options?.map((option) => 'value' in option && option.value)).toEqual([
-      'aiAgentTool',
       'attachment',
       'controller',
       'globalSearch',
       'object',
       'queue',
       'serviceCatalog',
+      'aiAgentTool',
     ]);
   });
 

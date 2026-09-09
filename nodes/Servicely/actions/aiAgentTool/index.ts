@@ -5,7 +5,7 @@ import * as sendResponse from './sendResponse.operation';
 export { sendResponse };
 
 /**
- * Properties for the AI Agent Tool resource: answer a call the Servicely SoFi AI
+ * Properties for the SoFi AI Webhook resource: answer a call the Servicely SoFi AI
  * Webhook Trigger let in. The odd one out among the resources — it talks to the agent
  * waiting on the open request rather than to the Servicely API, which is why it
  * needs no credential (see `Servicely.node.ts`) and shows no Request Options.

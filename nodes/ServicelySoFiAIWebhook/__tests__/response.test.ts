@@ -195,13 +195,13 @@ describe('checkResponseModeConfiguration', () => {
 			checkResponseModeConfiguration(
 				makeContext('responseNode', [{ type: 'n8n-nodes-base.set' }]),
 			),
-		).toThrow('No Servicely node set to "AI Agent Tool" found in the workflow');
+		).toThrow('No Servicely node set to "SoFi AI Webhook" found in the workflow');
 	});
 
 	it('refuses a responder that would never get to respond', () => {
 		for (const mode of ['onReceived', 'lastNode']) {
 			expect(() => checkResponseModeConfiguration(makeContext(mode, RESPONDERS))).toThrow(
-				'Unused Servicely node set to "AI Agent Tool" found in the workflow',
+				'Unused Servicely node set to "SoFi AI Webhook" found in the workflow',
 			);
 		}
 	});
@@ -216,7 +216,7 @@ describe('checkResponseModeConfiguration', () => {
 		}
 		expect(() =>
 			checkResponseModeConfiguration(makeContext('responseNode', [{ type: 'other.somethingElse' }])),
-		).toThrow('No Servicely node set to "AI Agent Tool" found');
+		).toThrow('No Servicely node set to "SoFi AI Webhook" found');
 	});
 
 	// A Servicely node is in almost every one of these workflows, doing the work the
@@ -231,7 +231,7 @@ describe('checkResponseModeConfiguration', () => {
 			const children = [{ type: 'servicely', parameters }];
 
 			expect(() => checkResponseModeConfiguration(makeContext('responseNode', children))).toThrow(
-				'No Servicely node set to "AI Agent Tool" found',
+				'No Servicely node set to "SoFi AI Webhook" found',
 			);
 			expect(() =>
 				checkResponseModeConfiguration(makeContext('onReceived', children)),
@@ -251,7 +251,7 @@ describe('checkResponseModeConfiguration', () => {
 			const children = [{ type, parameters: { resource: 'aiAgentTool' } }];
 
 			expect(() => checkResponseModeConfiguration(makeContext('responseNode', children))).toThrow(
-				'No Servicely node set to "AI Agent Tool" found',
+				'No Servicely node set to "SoFi AI Webhook" found',
 			);
 			expect(() =>
 				checkResponseModeConfiguration(makeContext('onReceived', children)),

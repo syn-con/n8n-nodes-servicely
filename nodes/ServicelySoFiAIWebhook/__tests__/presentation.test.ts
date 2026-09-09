@@ -31,7 +31,7 @@ describe('how the SoFi AI Webhook presents itself', () => {
 		expect(action.group).not.toContain('trigger');
 
 		const resource = options('resource').find((option) => option.value === RESPONSE_RESOURCE);
-		expect(resource?.name).toBe('AI Agent Tool');
+		expect(resource?.name).toBe('SoFi AI Webhook');
 	});
 
 	it('offers Send Response as the resource operation', () => {

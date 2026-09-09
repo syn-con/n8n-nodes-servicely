@@ -30,7 +30,7 @@ export class Servicely implements INodeType {
     inputs: [NodeConnectionTypes.Main],
     outputs: [NodeConnectionTypes.Main],
     // Required for every resource that calls the API, which is all of them except
-    // AI Agent Tool: that one answers the request a tool call is still holding
+    // SoFi AI Webhook: that one answers the request a tool call is still holding
     // open, and never talks to the instance.
     credentials: [
       {

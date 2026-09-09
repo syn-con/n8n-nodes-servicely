@@ -9,7 +9,7 @@ import { DEFAULT_RESPONSE_TIMEOUT_SECONDS } from './parameters';
 import { RESPONSE_NODE_TYPE, RESPONSE_RESOURCE } from './presentation';
 
 /**
- * How the AI Agent Tool answers a call, modelled on n8n's own Webhook node
+ * How the SoFi AI Webhook answers a call, modelled on n8n's own Webhook node
  * (`packages/nodes-base/nodes/Webhook`): the trigger itself never writes the
  * response for a mode that answers later. It only *declares* — in its webhook
  * description — the mode, the status code and what data to send, and n8n's
@@ -34,7 +34,7 @@ export interface ResponseParameters {
 
 /**
  * The status code n8n answers with, for every mode that does not have a
- * Servicely node set to *AI Agent Tool* to take the decision.
+ * Servicely node set to *SoFi AI Webhook* to take the decision.
  *
  * Interpolated into an expression, so it must stand on its own: no imports, no
  * helpers, nothing from this module's scope.
@@ -81,7 +81,7 @@ export const getResponseData = (parameters: ResponseParameters) => {
 
 /**
  * Whether a node is the one that answers a tool call: the Servicely node with its
- * Resource set to *AI Agent Tool*. Until 1.2.0 this was a node type of its own,
+ * Resource set to *SoFi AI Webhook*. Until 1.2.0 this was a node type of its own,
  * and the type alone said so; the answer now lives on the action node, so the
  * parameter has to be read too — hence the `includeNodeParameters` below.
  *
@@ -120,10 +120,10 @@ export function checkResponseModeConfiguration(context: IWebhookFunctions): void
 	if (responseNodes.length === 0 && responseMode === 'responseNode') {
 		throw new WorkflowConfigurationError(
 			context.getNode(),
-			new Error('No Servicely node set to "AI Agent Tool" found in the workflow'),
+			new Error('No Servicely node set to "SoFi AI Webhook" found in the workflow'),
 			{
 				description:
-					'Add a Servicely node with Resource "AI Agent Tool" and Operation "Send Response" to this workflow to answer the agent, or choose another option for the "Respond" parameter.',
+					'Add a Servicely node with Resource "SoFi AI Webhook" and Operation "Send Response" to this workflow to answer the agent, or choose another option for the "Respond" parameter.',
 			},
 		);
 	}
@@ -131,10 +131,10 @@ export function checkResponseModeConfiguration(context: IWebhookFunctions): void
 	if (responseNodes.length > 0 && responseMode !== 'responseNode') {
 		throw new WorkflowConfigurationError(
 			context.getNode(),
-			new Error('Unused Servicely node set to "AI Agent Tool" found in the workflow'),
+			new Error('Unused Servicely node set to "SoFi AI Webhook" found in the workflow'),
 			{
 				description:
-					'Set the "Respond" parameter to "Using Servicely Node", or remove the Servicely node set to "AI Agent Tool".',
+					'Set the "Respond" parameter to "Using Servicely Node", or remove the Servicely node set to "SoFi AI Webhook".',
 			},
 		);
 	}
@@ -178,7 +178,7 @@ export const responseModeProperty: INodeProperties = {
 			// label moved when the responder became a resource of the action node.
 			name: 'Using Servicely Node',
 			value: 'responseNode',
-			description: 'Response defined by a Servicely node set to "AI Agent Tool"',
+			description: 'Response defined by a Servicely node set to "SoFi AI Webhook"',
 		},
 	],
 	default: 'responseNode',
@@ -189,7 +189,7 @@ export const responseModeProperty: INodeProperties = {
 export const responseModeNotices: INodeProperties[] = [
 	{
 		displayName:
-			'Insert a Servicely node with Resource "AI Agent Tool" and Operation "Send Response" to control when and how you respond. The request stays open until that node runs, so a workflow that never reaches it never answers.',
+			'Insert a Servicely node with Resource "SoFi AI Webhook" and Operation "Send Response" to control when and how you respond. The request stays open until that node runs, so a workflow that never reaches it never answers.',
 		name: 'responseNodeNotice',
 		type: 'notice',
 		default: '',

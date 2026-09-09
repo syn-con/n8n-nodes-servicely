@@ -5,7 +5,7 @@ import type { CodexData } from 'n8n-workflow';
  *
  * It is two halves: the trigger here, which opens the endpoint a Servicely agent
  * calls and registers the tool with the service desk, and the answer to that
- * call, which is the *AI Agent Tool* resource of the Servicely action node
+ * call, which is the *SoFi AI Webhook* resource of the Servicely action node
  * (`nodes/Servicely/actions/aiAgentTool/`). They were two node types until 1.2.0;
  * n8n verification allows a package only one regular node, so the responder moved
  * onto the one the package already had, leaving the trigger — which is allowed

@@ -7,6 +7,22 @@ All notable changes to this project are documented here.
 > release, so the durable home for migration notes is the **Compatibility**
 > section of `README.md`.
 
+## 1.8.0
+
+### Changed
+
+- **The responder's resource is called *SoFi AI Webhook*.** 1.5.0 renamed the
+  trigger and left the resource answering it as *AI Agent Tool*, so the two halves
+  of one feature read as two in the editor. The **Respond** notices and the wiring
+  errors follow the new label — `No Servicely node set to "SoFi AI Webhook" found
+  in the workflow` — and the entry sorts last in the **Resource** dropdown, the
+  list being alphabetical by label.
+
+  The resource *value* is still `aiAgentTool`, so a saved workflow keeps the
+  resource it selected and needs no edit; `nodes/Servicely/actions/aiAgentTool/`
+  keeps its name for the same reason, the router finding a resource's folder by
+  that value.
+
 ## 1.7.0
 
 ### Changed

@@ -26,13 +26,16 @@ export const properties: INodeProperties[] = [
     noDataExpression: true,
     // Alphabetical by name, as n8n's own resource selectors are
     options: [
-      { name: 'AI Agent Tool', value: 'aiAgentTool' },
       { name: 'Attachment', value: 'attachment' },
       { name: 'Controller', value: 'controller' },
       { name: 'Global Search', value: 'globalSearch' },
       { name: 'Object', value: 'object' },
       { name: 'Queue', value: 'queue' },
       { name: 'Service Catalog', value: 'serviceCatalog' },
+      // Answers the SoFi AI Webhook Trigger. The value is what a saved workflow
+      // holds and what `actions/aiAgentTool/` is found under, so only the label
+      // followed the trigger's rename.
+      { name: 'SoFi AI Webhook', value: 'aiAgentTool' },
     ],
     default: 'object',
   },
@@ -45,7 +48,7 @@ export const properties: INodeProperties[] = [
   ...aiAgentTool.description,
   {
     ...requestOptionsProperty,
-    // Every resource but AI Agent Tool, which answers an open request rather than
+    // Every resource but SoFi AI Webhook, which answers an open request rather than
     // making one, so a timeout and a retry count have nothing to apply to. Scoped
     // here rather than on the shared fragment because only this node has a
     // `resource` parameter for the condition to name — see the fragment's comment.
