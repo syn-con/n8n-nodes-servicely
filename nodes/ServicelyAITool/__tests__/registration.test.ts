@@ -1,7 +1,7 @@
 import type { IDataObject, IHookFunctions } from 'n8n-workflow';
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_EXECUTION_SCRIPT, LIVE_RUN_PARAMETER } from '../parameters';
+import { LIVE_RUN_PARAMETER } from '../parameters';
 import { checkToolExists, createTool, deleteTool } from '../registration';
 
 /** The wording of the flag every tool carries, as the agent reads it. */
@@ -10,11 +10,12 @@ const LIVE_RUN_DESCRIPTION = LIVE_RUN_PARAMETER.description;
 /** The webhook URL the stub reports, which is what a script is registered with. */
 const WEBHOOK_URL = 'https://n8n.example.com/webhook/create-incident';
 
-/** The default script as it reaches the instance: its placeholder resolved. */
-const RESOLVED_DEFAULT_SCRIPT = DEFAULT_EXECUTION_SCRIPT.replace(
-	"'@@WEBHOOK_URL@@'",
-	`'${WEBHOOK_URL}'`,
-);
+/** The handler the node selects, and the script its record holds. */
+const HANDLER_ID = 'handler-1';
+const HANDLER_SCRIPT = "let url = '@@WEBHOOK_URL@@'; HTTP.post(url).execute();";
+
+/** That script as it reaches the instance: its placeholder resolved. */
+const RESOLVED_SCRIPT = HANDLER_SCRIPT.replace("'@@WEBHOOK_URL@@'", `'${WEBHOOK_URL}'`);
 
 interface HookStubOptions {
 	/** Responses handed out in order; the last one repeats. */
@@ -42,11 +43,24 @@ interface HookStubOptions {
 	agentListStatus?: number;
 	/** Status for a registry write, for the case where the record is no longer there. */
 	agentWriteStatus?: number;
+	/**
+	 * The handler record the script is read from. Answered off the positional queue
+	 * and recorded in `handlerCalls`, the way the registries are: it is read before
+	 * the tool is written, so it must not shift what the queue hands the writes.
+	 */
+	handler?: IDataObject | null;
+	/** The script that record holds, when only the script is what a test is about. */
+	handlerScript?: string;
+	/** Status for the handler read, for the case where the record is not there. */
+	handlerStatus?: number;
 }
 
 /** Whether a URL addresses one of the two AI registries. */
 const isAiRegistry = (url: string) =>
 	url.startsWith('/v1/SystemAIAgent') || url.startsWith('/v1/SystemAIAssistant');
+
+/** Whether a URL addresses the webhook handler table. */
+const isHandler = (url: string) => url.startsWith('/v1/C_n8n_Webhook_Handler');
 
 interface Call {
 	method: string;
@@ -59,9 +73,14 @@ function makeHookCtx(options: HookStubOptions = {}) {
 	const responses = options.responses ?? [{ status: 200, body: { data: [] } }];
 	const calls: Call[] = [];
 	const agentCalls: Call[] = [];
+	const handlerCalls: Call[] = [];
 	/** Every request, both channels, in the order they went out. */
 	const sequence: string[] = [];
-	const params: IDataObject = { prompt: 'Creates an incident', ...options.params };
+	const params: IDataObject = {
+		prompt: 'Creates an incident',
+		handler: HANDLER_ID,
+		...options.params,
+	};
 	let n = 0;
 
 	const warnings: string[] = [];
@@ -70,6 +89,7 @@ function makeHookCtx(options: HookStubOptions = {}) {
 	const ctx = {
 		calls,
 		agentCalls,
+		handlerCalls,
 		sequence,
 		warnings,
 		errors,
@@ -105,6 +125,23 @@ function makeHookCtx(options: HookStubOptions = {}) {
 
 				sequence.push(`${request.method} ${request.url}`);
 
+				if (isHandler(request.url)) {
+					handlerCalls.push(call);
+					const record =
+						'handler' in options
+							? options.handler
+							: {
+								id: HANDLER_ID,
+								C_Name: 'Post to n8n',
+								C_ExecutionScript: options.handlerScript ?? HANDLER_SCRIPT,
+							};
+					return {
+						statusCode: options.handlerStatus ?? 200,
+						headers: {},
+						body: { data: record },
+					};
+				}
+
 				if (isAiRegistry(request.url)) {
 					agentCalls.push(call);
 					// A GET lists the table; a PATCH only has to answer
@@ -130,6 +167,7 @@ function makeHookCtx(options: HookStubOptions = {}) {
 	return ctx as unknown as IHookFunctions & {
 		calls: Call[];
 		agentCalls: Call[];
+		handlerCalls: Call[];
 		sequence: string[];
 		warnings: string[];
 		errors: string[];
@@ -214,7 +252,7 @@ describe('create', () => {
 			SelectionPrompt: 'Creates an incident',
 			Description: DESCRIPTION,
 			TimeoutSeconds: 60,
-			ExecutionScript: RESOLVED_DEFAULT_SCRIPT,
+			ExecutionScript: RESOLVED_SCRIPT,
 		});
 	});
 
@@ -233,7 +271,7 @@ describe('create', () => {
 			SelectionPrompt: 'Creates an incident, now with feeling',
 			Description: DESCRIPTION,
 			TimeoutSeconds: 60,
-			ExecutionScript: RESOLVED_DEFAULT_SCRIPT,
+			ExecutionScript: RESOLVED_SCRIPT,
 		});
 	});
 
@@ -306,35 +344,29 @@ describe('create', () => {
 		expect(ctx.calls[1].body).not.toHaveProperty('MutatesTicket');
 	});
 
-	// A tool with no script would be registered and then do nothing, so the default
-	// is what a node that says nothing gets.
-	it('falls back to the default Execution Script, with its URL resolved', async () => {
+	// The script is the instance's, not the node's: the node names a handler, and
+	// the handler's record is what carries the script.
+	it("registers the selected handler's script, with its URL resolved", async () => {
 		const ctx = makeHookCtx({ responses: [ok([TOOL]), ok({ id: 'tool-9' })] });
 
 		await createTool.call(ctx);
 
+		expect(ctx.handlerCalls[0]).toMatchObject({
+			method: 'GET',
+			url: `/v1/C_n8n_Webhook_Handler/${HANDLER_ID}`,
+		});
 		const { ExecutionScript } = ctx.calls[1].body as IDataObject;
-		expect(ExecutionScript).toBe(RESOLVED_DEFAULT_SCRIPT);
+		expect(ExecutionScript).toBe(RESOLVED_SCRIPT);
 		expect(ExecutionScript).not.toContain('@@WEBHOOK_URL@@');
 		// The script quoted the placeholder itself, so no second pair was added
 		expect(ExecutionScript).toContain(`let url = '${WEBHOOK_URL}';`);
 	});
 
-	it('falls back to the default when the option is left blank', async () => {
+	// A GET by id may echo the record on its own or wrapped in a list
+	it('reads the script from a record answered as a single-item list', async () => {
 		const ctx = makeHookCtx({
 			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
-			params: { options: { executionScript: '   ' } },
-		});
-
-		await createTool.call(ctx);
-
-		expect((ctx.calls[1].body as IDataObject).ExecutionScript).toContain('HTTP.post(url)');
-	});
-
-	it('sends the Execution Script with the tool', async () => {
-		const ctx = makeHookCtx({
-			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
-			params: { options: { executionScript: 'servicely.log("called")' } },
+			handler: [{ id: HANDLER_ID, C_ExecutionScript: 'servicely.log("called")' }] as never,
 		});
 
 		await createTool.call(ctx);
@@ -342,17 +374,46 @@ describe('create', () => {
 		expect(ctx.calls[1].body).toMatchObject({ ExecutionScript: 'servicely.log("called")' });
 	});
 
+	// Nothing is written before the script is in hand: a tool registered without one
+	// would be offered to the agent and then do nothing when it is called.
+	it('refuses to register a tool with no handler selected', async () => {
+		const ctx = makeHookCtx({ params: { handler: '' } });
+
+		await expect(createTool.call(ctx)).rejects.toThrow(
+			'No Servicely webhook handler is selected',
+		);
+		expect(ctx.calls).toHaveLength(0);
+		expect(ctx.handlerCalls).toHaveLength(0);
+	});
+
+	it('refuses to register a tool whose handler is not on the instance', async () => {
+		const ctx = makeHookCtx({ handlerStatus: 404 });
+
+		await expect(createTool.call(ctx)).rejects.toThrow(
+			`The selected webhook handler (${HANDLER_ID}) is not on this Servicely instance`,
+		);
+		expect(ctx.calls).toHaveLength(0);
+	});
+
+	it('refuses to register a tool whose handler holds no script', async () => {
+		const ctx = makeHookCtx({ handlerScript: '   ' });
+
+		await expect(createTool.call(ctx)).rejects.toThrow(
+			`The selected webhook handler (${HANDLER_ID}) holds no script`,
+		);
+		expect(ctx.calls).toHaveLength(0);
+	});
+
 	it("replaces @@WEBHOOK_URL@@ with the tool's quoted webhook URL, every time it appears", async () => {
 		const ctx = makeHookCtx({
 			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
-			params: { options: { executionScript: 'post(@@WEBHOOK_URL@@); retry(@@WEBHOOK_URL@@)' } },
+			handlerScript: 'post(@@WEBHOOK_URL@@); retry(@@WEBHOOK_URL@@)',
 		});
 
 		await createTool.call(ctx);
 
 		expect(ctx.calls[1].body).toMatchObject({
-			ExecutionScript:
-				"post('https://n8n.example.com/webhook/create-incident'); retry('https://n8n.example.com/webhook/create-incident')",
+			ExecutionScript: `post('${WEBHOOK_URL}'); retry('${WEBHOOK_URL}')`,
 		});
 	});
 
@@ -361,44 +422,39 @@ describe('create', () => {
 	it('still resolves the legacy @@URL@@ spelling, quoted or bare', async () => {
 		const ctx = makeHookCtx({
 			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
-			params: { options: { executionScript: "post('@@URL@@'); retry(@@URL@@)" } },
+			handlerScript: "post('@@URL@@'); retry(@@URL@@)",
 		});
 
 		await createTool.call(ctx);
 
-		const url = 'https://n8n.example.com/webhook/create-incident';
 		expect(ctx.calls[1].body).toMatchObject({
-			ExecutionScript: `post('${url}'); retry('${url}')`,
+			ExecutionScript: `post('${WEBHOOK_URL}'); retry('${WEBHOOK_URL}')`,
 		});
 	});
 
 	it('resolves both spellings in one script', async () => {
 		const ctx = makeHookCtx({
 			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
-			params: { options: { executionScript: 'post(@@WEBHOOK_URL@@); retry(@@URL@@)' } },
+			handlerScript: 'post(@@WEBHOOK_URL@@); retry(@@URL@@)',
 		});
 
 		await createTool.call(ctx);
 
-		const url = 'https://n8n.example.com/webhook/create-incident';
 		expect(ctx.calls[1].body).toMatchObject({
-			ExecutionScript: `post('${url}'); retry('${url}')`,
+			ExecutionScript: `post('${WEBHOOK_URL}'); retry('${WEBHOOK_URL}')`,
 		});
 	});
 
 	it('leaves the quotes alone when the script already quoted the placeholder', async () => {
 		const ctx = makeHookCtx({
 			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
-			params: {
-				options: { executionScript: "post('@@WEBHOOK_URL@@'); log(\"@@WEBHOOK_URL@@\"); retry(@@WEBHOOK_URL@@)" },
-			},
+			handlerScript: "post('@@WEBHOOK_URL@@'); log(\"@@WEBHOOK_URL@@\"); retry(@@WEBHOOK_URL@@)",
 		});
 
 		await createTool.call(ctx);
 
-		const url = 'https://n8n.example.com/webhook/create-incident';
 		expect(ctx.calls[1].body).toMatchObject({
-			ExecutionScript: `post('${url}'); log("${url}"); retry('${url}')`,
+			ExecutionScript: `post('${WEBHOOK_URL}'); log("${WEBHOOK_URL}"); retry('${WEBHOOK_URL}')`,
 		});
 	});
 
@@ -409,25 +465,23 @@ describe('create', () => {
 			mode: 'manual',
 			webhookUrl: 'https://n8n.example.com/webhook-test/create-incident',
 			responses: [ok([TOOL]), ok({ id: 'tool-9' })],
-			params: { options: { executionScript: 'post(@@WEBHOOK_URL@@)' } },
+			handlerScript: 'post(@@WEBHOOK_URL@@)',
 		});
 
 		await createTool.call(ctx);
 
 		expect(ctx.calls[1].body).toMatchObject({
-			ExecutionScript: "post('https://n8n.example.com/webhook/create-incident')",
+			ExecutionScript: `post('${WEBHOOK_URL}')`,
 		});
 	});
 
 	it('refuses to register a script whose URL cannot be resolved', async () => {
 		const ctx = makeHookCtx({
 			webhookUrl: undefined,
-			params: { options: { executionScript: 'post(@@WEBHOOK_URL@@)' } },
+			handlerScript: 'post(@@WEBHOOK_URL@@)',
 		});
 
-		await expect(createTool.call(ctx)).rejects.toThrow(
-			"webhook URL could not be resolved",
-		);
+		await expect(createTool.call(ctx)).rejects.toThrow('webhook URL could not be resolved');
 		// Nothing was written
 		expect(ctx.calls).toHaveLength(0);
 	});

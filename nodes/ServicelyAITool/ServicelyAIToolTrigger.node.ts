@@ -19,7 +19,8 @@ import {
 	checkAuthCredential,
 	WebhookAuthorizationError,
 } from './authentication';
-import { executionScriptOption, readParameterDefinitions } from './parameters';
+import { getWebhookHandlers, handlerProperty } from './handler';
+import { readParameterDefinitions } from './parameters';
 import {
 	AUTH_DISPLAY_NAME,
 	DOCUMENTATION_URL,
@@ -57,9 +58,9 @@ export class ServicelyAIToolTrigger implements INodeType {
 		icon: { light: 'file:../../icons/servicely.svg', dark: 'file:../../icons/servicely.dark.svg' },
 		group: ['trigger'],
 		version: 1,
-		// The tool is named after the node, so the canvas already says which tool this
-		// is; the subtitle says where it answers instead
-		subtitle: '={{"POST /" + $parameter["path"]}}',
+		// The tool is named after the node, and its path is the node id rather than
+		// anything anyone typed — so all the subtitle has left to say is the method
+		subtitle: 'POST',
 		description: 'Expose this workflow as a tool for the Servicely service desk AI agent',
 		documentationUrl: DOCUMENTATION_URL,
 		// Filed and found alongside its Response node — see `presentation.ts`
@@ -96,9 +97,12 @@ export class ServicelyAIToolTrigger implements INodeType {
 			{
 				name: 'default',
 				httpMethod: 'POST',
-				// Serve exactly the configured path instead of prefixing the internal webhook ID
+				// The node id, served as the whole path rather than appended to the internal
+				// webhook id: it is what the tool is registered under (its `Key`), it is
+				// unique per node, and it survives renaming and moving the node — so the URL
+				// the handler's script is given stays the one this node answers on
 				isFullPath: true,
-				path: '={{$parameter["path"]}}',
+				path: '={{$nodeId}}',
 				// How the call is answered, declared rather than written by this node —
 				// see `response.ts`
 				...responseWebhookFields,
@@ -131,16 +135,9 @@ export class ServicelyAIToolTrigger implements INodeType {
 				description:
 					'Tells the agent what this tool does and when to call it. Exported with the tool.',
 			},
-			{
-				displayName: 'Path',
-				name: 'path',
-				type: 'string',
-				noDataExpression: true,
-				default: '',
-				placeholder: 'e.g. create-incident',
-				required: true,
-				description: 'The path this tool listens on, appended to the webhook base URL',
-			},
+			// The script the service desk runs for this tool, kept on the instance rather
+			// than on the node — see `handler.ts`
+			handlerProperty,
 			{
 				displayName: 'Parameters',
 				name: 'parameters',
@@ -153,7 +150,7 @@ export class ServicelyAIToolTrigger implements INodeType {
 				},
 				default: {},
 				description:
-					'The arguments of the tool. They are exported with it and every request is validated against them: a required argument has to be sent, and any argument that is sent has to have the declared type. From Script keeps one out of the exported tool while still validating it: the Execution Script sends that value — the signed-in Servicely user — not the agent. A boolean IsLiveRun is always exported on top of these — the agent sends true unless it was asked for a test run — but it is not validated, so a call that omits it still runs. Declaring one here replaces it, and then it is validated like any other.',
+					'The arguments of the tool. They are exported with it and every request is validated against them: a required argument has to be sent, and any argument that is sent has to have the declared type. From Script keeps one out of the exported tool while still validating it: the script of the selected handler sends that value — the signed-in Servicely user, say — not the agent. A boolean IsLiveRun is always exported on top of these — the agent sends true unless it was asked for a test run — but it is not validated, so a call that omits it still runs. Declaring one here replaces it, and then it is validated like any other.',
 				options: [
 					{
 						name: 'values',
@@ -178,7 +175,7 @@ export class ServicelyAIToolTrigger implements INodeType {
 								noDataExpression: true,
 								default: false,
 								description:
-									'Whether the value comes from the Execution Script instead of the agent. The parameter is then not created as a tool parameter, so the agent is never offered it, and the default script sends the signed-in Servicely user for it — their email address, or their username when the account has no email — refusing a call from a user it cannot name. Keep such a parameter typed String, since that is what the script assigns. It is still validated here like any other parameter, and never counts as unknown when Allow Unknown Parameters is off.',
+									'Whether the value comes from the script of the selected handler instead of the agent. The parameter is then not created as a tool parameter, so the agent is never offered it, and the script is what sends it — the signed-in Servicely user, say. It is still validated here like any other parameter, and never counts as unknown when Allow Unknown Parameters is off.',
 							},
 							{
 								displayName: 'Name',
@@ -312,9 +309,6 @@ export class ServicelyAIToolTrigger implements INodeType {
 						description:
 							'Whether values are converted to the defined type before validation, e.g. the string "12" to the number 12. Useful for form encoded bodies.',
 					},
-					// The script, and its default, declared next to the script text — see
-					// `parameters.ts`
-					executionScriptOption,
 					{
 						displayName: 'Mutates Ticket',
 						name: 'mutatesTicket',
@@ -357,7 +351,7 @@ export class ServicelyAIToolTrigger implements INodeType {
 
 	/** Only the registries this node selects from: the pickers of the Servicely node have no counterpart here. */
 	methods = {
-		loadOptions: { getAiAgents, getAiAssistants, getRoles },
+		loadOptions: { getAiAgents, getAiAssistants, getRoles, getWebhookHandlers },
 		credentialTest: {
 			/**
 			 * Answers the **Test** button on the auth credential. Named by

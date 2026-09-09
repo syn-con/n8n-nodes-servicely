@@ -8,12 +8,9 @@ import {
 	toRecordList,
 } from '../Servicely/GenericFunctions';
 import type { ServicelyRecord } from '../Servicely/types';
+import { readHandlerScript } from './handler';
 import { toolDescription, toolKey, toolName } from './identity';
-import {
-	readExecutionScript,
-	readParameterDefinitions,
-	readToolTimeoutSeconds,
-} from './parameters';
+import { readParameterDefinitions, readToolTimeoutSeconds } from './parameters';
 import type { ParameterDefinition } from './validation';
 
 /**
@@ -90,7 +87,7 @@ const TOOL_HOLDERS = [
 type ToolHolder = (typeof TOOL_HOLDERS)[number];
 
 /**
- * Stands in for this tool's webhook URL inside the Execution Script, documented
+ * Stands in for this tool's webhook URL inside the handler's script, documented
  * spelling first. `@@URL@@` is what the placeholder was called before it said what
  * it stood for; it is still resolved, and silently, since it sits in scripts that
  * are already saved and one left alone would register a script that then fails on
@@ -135,24 +132,26 @@ function isTestRegistration(ctx: IHookFunctions): boolean {
 }
 
 /**
- * The Execution Script as the service desk should hold it: whichever script
- * {@link readExecutionScript} settles on, with every
- * {@link URL_PLACEHOLDERS placeholder} replaced by this tool's webhook URL, so a
- * script can name its own endpoint without being edited per instance.
+ * The Execution Script as the service desk should hold it: the script of the
+ * handler the node selects (see `handler.ts`), with every
+ * {@link URL_PLACEHOLDERS placeholder} replaced by this tool's webhook URL — which
+ * is what lets one handler script serve every tool, each of them still posting to
+ * its own endpoint.
  *
  * Always the *production* URL, even when a test listen is what triggered the
- * registration: the script decides at call time which endpoint it wants (the
- * default one rewrites the segment when `IsLiveRun` is false), so handing it a
+ * registration: the script decides at call time which endpoint it wants (a script
+ * that honours `IsLiveRun` rewrites the segment when it is false), so handing it a
  * test URL would leave it deriving a test URL from a test URL.
  *
  * The URL is a string wherever it lands, so a bare placeholder is quoted on the
  * way in. One the script already quoted keeps the quotes it was written with —
  * quoting it again would only produce an empty string next to a bare URL.
  *
- * @throws {NodeOperationError} when the script asks for a URL n8n cannot resolve
+ * @throws {NodeOperationError} when no handler is selected or its script cannot be
+ * read, and when the script asks for a URL n8n cannot resolve
  */
-function executionScript(ctx: IHookFunctions): string {
-	const script = readExecutionScript(ctx);
+async function executionScript(ctx: IHookFunctions): Promise<string> {
+	const script = await readHandlerScript(ctx);
 	if (!URL_PLACEHOLDERS.some((placeholder) => script.includes(placeholder))) {
 		return script;
 	}
@@ -161,8 +160,8 @@ function executionScript(ctx: IHookFunctions): string {
 	if (!url) {
 		throw new NodeOperationError(
 			ctx.getNode(),
-			`The Execution Script uses ${URL_PLACEHOLDERS[0]}, but this tool's webhook URL could not be resolved`,
-			{ description: 'Give the node a fixed Path, save the workflow, and activate it again.' },
+			`The handler's script uses ${URL_PLACEHOLDERS[0]}, but this tool's webhook URL could not be resolved`,
+			{ description: 'Save the workflow and activate it again.' },
 		);
 	}
 
@@ -601,14 +600,20 @@ export async function createTool(this: IHookFunctions): Promise<boolean> {
 	this.logger.debug('Registering the Servicely AI Agent Tool for this node');
 	const key = toolKey(this);
 
+	// Read before anything is written: a tool with no script does nothing when the
+	// agent calls it, so a handler that cannot be read stops the registration rather
+	// than leaving a scriptless tool behind
+	const script = await executionScript(this);
+
 	const fields: IDataObject = {
 		// Always sent, so renaming the node renames the tool on the next activation
 		Name: toolName(this),
 		Active: true,
 		SelectionPrompt: String(this.getNodeParameter('prompt', '') ?? ''),
 		Description: toolDescription(this),
-		// Always sent, so clearing the field in n8n clears it on the record too
-		ExecutionScript: executionScript(this),
+		// Always sent, so re-activating picks up a handler script edited in the
+		// service desk — and re-pointing the node at another handler replaces it
+		ExecutionScript: script,
 		// How long the service desk waits for a call to be answered — the node's Tool
 		// Timeout. n8n sets no deadline of its own, so this is the only one there is,
 		// and it is sent on every registration so a changed timeout takes effect.

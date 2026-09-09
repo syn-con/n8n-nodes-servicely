@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { getAiAgents, getRoles } from '../../Servicely/SearchFunctions';
 import { AUTH_CREDENTIAL_NAME, AUTH_CREDENTIAL_TEST } from '../authentication';
+import { getWebhookHandlers } from '../handler';
 import { ServicelyAIToolTrigger } from '../ServicelyAIToolTrigger.node';
 
 const node = new ServicelyAIToolTrigger();
@@ -60,7 +61,7 @@ type ResponseStub = ReturnType<typeof makeResponseStub>;
 
 const DEFAULTS: IDataObject = {
 	prompt: 'Creates an incident',
-	path: 'create-incident',
+	handler: 'handler-1',
 	responseMode: 'onReceived',
 	onValidationError: 'respondError',
 	parameters: {},
@@ -163,10 +164,36 @@ describe('node description', () => {
 			.filter((entry) => entry.type !== 'notice')
 			.map((entry) => entry.name);
 
-		expect(named.slice(0, 3)).toEqual(['prompt', 'path', 'parameters']);
+		expect(named.slice(0, 3)).toEqual(['prompt', 'handler', 'parameters']);
 		expect(named).not.toContain('toolName');
+		expect(named).not.toContain('path');
 		expect(property('prompt').required).toBe(true);
-		expect(node.description.subtitle).toBe('={{"POST /" + $parameter["path"]}}');
+	});
+
+	// The tool is registered under the node id, and answers on it too — so renaming
+	// or moving the node never moves the endpoint the handler's script was given.
+	it('serves the webhook on the node id, as the whole path', () => {
+		expect(node.description.webhooks?.[0].path).toBe('={{$nodeId}}');
+		expect(node.description.webhooks?.[0].isFullPath).toBe(true);
+		// Nothing left for the subtitle to name, the path being the node's own id
+		expect(node.description.subtitle).toBe('POST');
+	});
+
+	// The script itself lives on the instance: the node only names the handler.
+	it('loads the Handler selector from the webhook handler table', () => {
+		const handler = property('handler');
+
+		expect(handler.type).toBe('options');
+		expect(handler.required).toBe(true);
+		expect(handler.default).toBe('');
+		expect(handler.typeOptions?.loadOptionsMethod).toBe('getWebhookHandlers');
+		expect(node.methods.loadOptions.getWebhookHandlers).toBe(getWebhookHandlers);
+	});
+
+	it('has no Execution Script option any more', () => {
+		const options = (property('options').options ?? []) as INodeProperties[];
+
+		expect(options.map((entry) => entry.name)).not.toContain('executionScript');
 	});
 
 	// Both are the tool record's own flags, off unless the option is added and set.

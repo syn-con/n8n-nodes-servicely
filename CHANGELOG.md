@@ -7,6 +7,30 @@ All notable changes to this project are documented here.
 > release, so the durable home for migration notes is the **Compatibility**
 > section of `README.md`.
 
+## 1.4.0
+
+### Changed
+
+- **The AI Agent Tool trigger runs a handler script kept on the instance.**
+  **Options -> Execution Script** and **Path** are removed; a required **Handler**
+  selector replaces them, loaded from the instance's `C_n8n_Webhook_Handler`
+  table (labelled by `C_Name`, stored by record id). Activation fetches that
+  record, takes its `C_ExecutionScript`, and registers it as the tool's
+  `ExecutionScript` with every `@@WEBHOOK_URL@@` resolved to this tool's webhook
+  URL -- so one handler script serves every tool, each still posting to its own
+  endpoint, and a script edited in the service desk reaches every tool that
+  selects it on the next activation.
+
+  Nothing is written before that script is in hand: no handler selected, a record
+  that is not there, or a record with an empty script fails the activation rather
+  than registering a tool that does nothing when the agent calls it.
+
+  With **Path** gone the tool answers on `/webhook/<node id>` -- the same node id
+  it is registered under, so renaming or moving the node no longer moves the URL
+  the handler's script was given. **An active workflow's endpoint moves, and a
+  script written in the node is dropped**; see **Compatibility** in `README.md`
+  for what to do about both.
+
 ## 1.3.1
 
 ### Fixed
