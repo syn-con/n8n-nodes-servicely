@@ -7,6 +7,20 @@ All notable changes to this project are documented here.
 > release, so the durable home for migration notes is the **Compatibility**
 > section of `README.md`.
 
+## 1.7.0
+
+### Changed
+
+- **On Validation Error is an option rather than a field of its own.** It sits in
+  the trigger's **Options** collection, where an option nobody added means the
+  strict answer — a `400` carrying the validation errors — which is what the field
+  defaulted to.
+
+  **A workflow that had set it to *Run Workflow Anyway* loses that**: the value was
+  stored against the node and is read out of the collection now, so such a workflow
+  rejects an invalid call again until the option is added and set back. A workflow
+  left on the default needs no edit.
+
 ## 1.6.0
 
 ### Added

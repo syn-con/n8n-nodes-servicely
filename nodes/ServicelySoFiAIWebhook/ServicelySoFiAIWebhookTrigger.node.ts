@@ -249,27 +249,6 @@ export class ServicelySoFiAIWebhookTrigger implements INodeType {
 			responseDataProperty,
 			toolTimeoutProperty,
 			{
-				displayName: 'On Validation Error',
-				name: 'onValidationError',
-				type: 'options',
-				noDataExpression: true,
-				options: [
-					{
-						name: 'Respond 400 Bad Request',
-						value: 'respondError',
-						description: 'Reject the request with the validation errors, the workflow does not run',
-					},
-					{
-						name: 'Run Workflow Anyway',
-						value: 'continue',
-						description:
-							'Run the workflow and pass the validation errors on in the "validation" property',
-					},
-				],
-				default: 'respondError',
-				description: 'What to do when the request body does not match the parameters',
-			},
-			{
 				displayName: 'Options',
 				name: 'options',
 				type: 'collection',
@@ -327,6 +306,28 @@ export class ServicelySoFiAIWebhookTrigger implements INodeType {
 						default: false,
 						description:
 							'Whether calling this tool changes something. Turn it on for tools that create, update or delete records, send messages, trigger external automations, or otherwise cause side effects. Exported with the tool; leave the option out and the service desk keeps whatever the tool already says.',
+					},
+					{
+						displayName: 'On Validation Error',
+						name: 'onValidationError',
+						type: 'options',
+						noDataExpression: true,
+						options: [
+							{
+								name: 'Respond 400 Bad Request',
+								value: 'respondError',
+								description: 'Reject the request with the validation errors, the workflow does not run',
+							},
+							{
+								name: 'Run Workflow Anyway',
+								value: 'continue',
+								description:
+									'Run the workflow and pass the validation errors on in the "validation" property',
+							},
+						],
+						default: 'respondError',
+						description:
+							'What to do when the request body does not match the parameters. Leave the option out and the call is rejected with a 400 carrying the errors.',
 					},
 					{
 						displayName: 'Production Restricted',
@@ -389,13 +390,14 @@ export class ServicelySoFiAIWebhookTrigger implements INodeType {
 		// call that would never be answered, and saying so beats hanging.
 		checkResponseModeConfiguration(this);
 
-		const onValidationError = this.getNodeParameter('onValidationError') as
-			| 'respondError'
-			| 'continue';
 		const options = this.getNodeParameter('options', {}) as {
 			allowUnknownParameters?: boolean;
 			coerceTypes?: boolean;
+			onValidationError?: 'respondError' | 'continue';
 		};
+		// An option nobody added is the strict answer, which is what the field defaulted
+		// to while it was a field of its own
+		const onValidationError = options.onValidationError ?? 'respondError';
 
 		const response = this.getResponseObject();
 

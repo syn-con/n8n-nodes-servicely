@@ -63,7 +63,6 @@ const DEFAULTS: IDataObject = {
 	prompt: 'Creates an incident',
 	handler: 'handler-1',
 	responseMode: 'onReceived',
-	onValidationError: 'respondError',
 	parameters: {},
 	options: {},
 };
@@ -206,6 +205,18 @@ describe('node description', () => {
 		const options = (property('options').options ?? []) as INodeProperties[];
 
 		expect(options.map((entry) => entry.name)).not.toContain('executionScript');
+	});
+
+	// Moved into the Options collection, where an option nobody added means the
+	// strict answer the field used to default to.
+	it('offers On Validation Error as an option, not a field of its own', () => {
+		const named = node.description.properties.map((entry) => entry.name);
+		const options = (property('options').options ?? []) as INodeProperties[];
+		const onValidationError = options.find((entry) => entry.name === 'onValidationError');
+
+		expect(named).not.toContain('onValidationError');
+		expect(onValidationError?.type).toBe('options');
+		expect(onValidationError?.default).toBe('respondError');
 	});
 
 	// Both are the tool record's own flags, off unless the option is added and set.
@@ -490,7 +501,7 @@ describe('validation', () => {
 	it('runs the workflow anyway when configured to, passing the errors on', async () => {
 		const { result } = await webhook({
 			params: {
-				onValidationError: 'continue',
+				options: { onValidationError: 'continue' },
 				parameters: { values: [parameterRow('count', 'integer')] },
 			},
 			body: {},

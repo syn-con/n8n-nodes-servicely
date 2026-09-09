@@ -306,7 +306,21 @@ The tool is exported under the **node's** name (as `[n8n] <node name>`), so the 
 > **Requires the Servicely package installed on your Servicely instance.** It holds the handler scripts a tool runs, in a `C_n8n_Webhook_Handler` table Servicely does not ship — without it the **Handler** list is empty and no tool can be activated. Contact SYNERGY ([support@synergy.eu](mailto:support@synergy.eu)) for details.
 
 - **Description** — what the tool does and when to call it. Exported with the tool, so the agent reads it when deciding.
-- **Handler Name or ID** — the handler whose script the service desk runs for this tool, required. The list holds the instance's `C_n8n_Webhook_Handler` records, labelled by `C_Name` and stored by record id. Set it up in Servicely first — see [Configure the webhook handler](#configure-the-webhook-handler) below.
+- **Handler Name or ID** — the handler whose script the service desk runs for this tool, required.
+
+  **Configure the webhook handler.** Before activating the workflow, configure a handler in Servicely:
+
+  1. Open **Intelligent automation → Intelligent actions → n8n Webhook Handler**.
+  2. Create a new handler or open an existing one.
+  3. Enter a clear **Name** and optional **Description**.
+  4. Set **Active** to *Yes*.
+  5. Add the request logic to **Execution Script**. The script must contain the `@@WEBHOOK_URL@@` placeholder. Do not replace this placeholder manually — the n8n node replaces it with the workflow's webhook URL during activation.
+  6. Save the handler.
+  7. Return to n8n and select it in **Handler Name or ID**.
+
+  The handler can be reused by multiple n8n tools because each workflow inserts its own webhook URL when it is activated.
+
+  Workflow activation fails if the selected handler no longer exists, is inactive, has an empty script, or does not contain the required placeholder.
 
   The endpoint is not configurable: the tool answers on `/webhook/<node id>`, which is also the id it is registered under, so renaming or moving the node never moves it.
 - **Parameters** — the tool's arguments. Each row is a **Param Name**, a **Param Type** (`String`, `Number`, `Integer`, `Boolean`; defaults to String), a **Param Required** toggle (on by default) and a **Param Description** that is exported with the tool.
@@ -321,7 +335,7 @@ The tool is exported under the **node's** name (as `[n8n] <node name>`), so the 
   - *When Last Node Finishes* — answers with the last executed node's data, shaped by **Response Data**: *First Entry JSON* (default), *All Entries*, or *No Response Body*.
 - **Tool Timeout (Seconds)** — how long the *service desk* waits for this tool to answer before giving up on the call, exported with the tool as `TimeoutSeconds`. Default 60, and shown under the two modes that make the agent wait; *Immediately* has already answered, so it does not ask. It is the only deadline in play: n8n keeps the request open for as long as the workflow runs, so this bounds the agent's wait, not the workflow's — a workflow that overruns it keeps going, it just answers into a call nobody is waiting for any more.
 - **The Respond setting and the wiring have to agree**, and a call that would go unanswered is refused with a `500` rather than left hanging: *Using Servicely Node* with no responder downstream fails with `No Servicely node set to "AI Agent Tool" found in the workflow`, and a responder under either other mode fails with "Unused …" — n8n has already replied by the time that node runs, so its answer would go nowhere. The check runs before the caller is even authenticated. Only a Servicely node whose **Resource** is *AI Agent Tool* counts; the ones doing the tool's actual work are ignored.
-- **On Validation Error** — respond `400` with the errors (default), or run the workflow anyway and pass them on in `json.validation`.
+- **Options → On Validation Error** — respond `400` with the errors, or *Run Workflow Anyway* and pass them on in `json.validation`. Leave the option out and the call is rejected with the `400`, which is what the field defaulted to while it was a field of its own.
 - **Options → Allow Unknown Parameters** (default on), **Coerce Types** (default off, converts e.g. the string `"12"` to `12` before validating), **AI Agent Names or IDs**, **AI Assistant Names or IDs**, **Role Names or IDs**, **Mutates Ticket**, and **Production Restricted**.
 - **Options → the response ones** — **Response Code** (default 200), **Response Headers**, **Response Data** (a fixed body for *Immediately*), **No Response Body**, and, for *When Last Node Finishes* returning First Entry JSON, **Response Content-Type** and **Response Property Name** (answer with one property of the item instead of the whole JSON). Each shows only under the modes it applies to, and none appears under *Using Servicely Node* — the responder carries its own status, body and headers.
 - **Options → AI Agent Names or IDs** / **AI Assistant Names or IDs** — who the tool is exported to: multi-selects loaded from the instance's `SystemAIAgent` and `SystemAIAssistant` tables, each entry labelled by its **Name** and stored by its record id. Reading them needs the **Servicely API** credential; a table that cannot be answered for leaves that list empty, which is also how an instance without one reads. Activating the workflow links the tool to exactly what each selects (see below). The two are independent — selecting agents does not touch the assistants — and an option you never add is left alone entirely: that table is not even read, since a workflow that says nothing about assistants is not asking for its tool to be taken out of them. Adding an option and then emptying it *is* a statement, and unlinks the tool from everything in that table.
@@ -330,22 +344,6 @@ The tool is exported under the **node's** name (as `[n8n] <node name>`), so the 
 - **Options → Production Restricted** — whether the tool is kept out of production environments. When on, it cannot be selected, executed or modified on a production system — for keeping an AI from, say, changing the schema of a live instance.
 
   These three share one rule: **an option you never add is left alone, an option you add is written as it stands.** Adding Roles and selecting nothing empties the tool's roles; adding a toggle and leaving it off writes `false`. Never adding them leaves whatever the service desk holds untouched, so a flag set there by hand survives every activation. (n8n keeps a collection option a workflow added even when its value equals the option's default, which is what makes "added and off" a different thing from "absent".)
-#### Configure the webhook handler
-
-Before activating the workflow, configure a handler in Servicely:
-
-1. Open **Intelligent automation → Intelligent actions → n8n Webhook Handler**.
-2. Create a new handler, or open an existing one.
-3. Enter a clear **Name** and, optionally, a **Description**.
-4. Set **Active** to *Yes*.
-5. Add the request logic to **Execution Script**. The script must contain the `@@WEBHOOK_URL@@` placeholder. Do not replace this placeholder manually — the n8n node replaces it with the workflow's webhook URL during activation.
-6. Save the handler.
-7. Return to n8n and select it in **Handler Name or ID**.
-
-The handler can be reused by multiple n8n tools, because each workflow inserts its own webhook URL when it is activated.
-
-Workflow activation fails if the selected handler no longer exists, is inactive, has an empty script, or does not contain the required placeholder.
-
 None of the fields take an expression. The node has no input, and its values are read on activation — when there is no execution to resolve one against.
 
 The emitted item carries `body`, `parameters` (the declared arguments the call actually sent, after coercion), `headers`, `query`, `params`, `validation`, and — with a JWT credential — the verified `jwt` payload.
@@ -413,6 +411,7 @@ A resource of the **Servicely** node, not a node of its own. It is the only reso
 
 ## Compatibility
 
+- **On Validation Error moved into Options in 1.7.0.** A workflow that had set it to *Run Workflow Anyway* loses that: the value was stored as a field of the node and is read from the Options collection now, so such a workflow rejects an invalid call with a `400` again until the option is added and set back. A workflow left on the default is unaffected.
 - **The trigger is called *Servicely SoFi AI Webhook Trigger* as of 1.5.0.** A display-name change only: the node type is still `servicelyAiAgentToolTrigger`, the responder is still **Servicely -> AI Agent Tool -> Send Response**, and the endpoint credential is still `servicelyAiToolAuthApi` — only its label reads **Servicely SoFi AI Webhook Auth API** now. A saved workflow keeps working untouched; it shows the new name the moment the package is updated, and a node left at the old default canvas name keeps that name (and so keeps registering its tool as `[n8n] Servicely AI Agent Tool`) until it is renamed by hand.
 - **The trigger's script and path moved out of the node in 1.4.0.** The **Options -> Execution Script** box and the **Path** field are **removed**, and a required **Handler** selector takes their place: the script now lives on the instance, in a `C_n8n_Webhook_Handler` record, and the node only says which one to run. Two things change for a workflow that is already active:
   - **Its endpoint moves.** The tool used to answer on the Path you typed; it now answers on `/webhook/<node id>`. Re-activating registers the new URL into the handler's script, so nothing has to be edited — but anything else calling the old path directly has to be pointed at the new one.
