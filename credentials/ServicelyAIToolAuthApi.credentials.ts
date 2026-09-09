@@ -1,6 +1,6 @@
 // This credential describes what an incoming tool call must present, so unlike
 // ServicelyApi it has no `test` request — there is no service to authenticate
-// against. Its Test button is answered by the AI Agent Tool Trigger instead, which
+// against. Its Test button is answered by the SoFi AI Webhook Trigger instead, which
 // names `servicelyAiToolAuthTest` as this credential's `testedBy` and checks the
 // fields the chosen type needs are filled in and usable (see `authentication.ts`).
 import type { Icon, ICredentialType, INodeProperties } from 'n8n-workflow';
@@ -8,7 +8,7 @@ import type { Icon, ICredentialType, INodeProperties } from 'n8n-workflow';
 export class ServicelyAIToolAuthApi implements ICredentialType {
 	name = 'servicelyAiToolAuthApi';
 
-	displayName = 'Servicely AI Agent Tool Auth API';
+	displayName = 'Servicely SoFi AI Webhook Auth API';
 
 	icon: Icon = { light: 'file:../icons/servicely.svg', dark: 'file:../icons/servicely.dark.svg' };
 
@@ -37,7 +37,7 @@ export class ServicelyAIToolAuthApi implements ICredentialType {
 				},
 			],
 			default: 'basicAuth',
-			description: 'The authentication method a call to the Servicely AI Agent Tool must use',
+			description: 'The authentication method a call to the Servicely SoFi AI Webhook must use',
 		},
 		{
 			displayName: 'User',

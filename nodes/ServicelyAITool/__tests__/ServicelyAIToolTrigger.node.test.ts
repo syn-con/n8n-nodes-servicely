@@ -19,7 +19,7 @@ const RESPONDER = {
 interface WebhookStubOptions {
 	params?: IDataObject;
 	body?: unknown;
-	/** Attached Servicely AI Agent Tool Auth credential; absent leaves the endpoint open. */
+	/** Attached Servicely SoFi AI Webhook Auth credential; absent leaves the endpoint open. */
 	credential?: IDataObject;
 	headers?: Record<string, string>;
 	/** The nodes downstream of the trigger, which decide the Respond wiring. */
@@ -86,7 +86,7 @@ function makeWebhookCtx(options: WebhookStubOptions = {}) {
 		getChildNodes: () =>
 			(options.children ?? []).map((child, index) => ({ name: `node ${index}`, ...child })),
 		getNode: () => ({
-			name: 'Servicely AI Agent Tool',
+			name: 'Servicely SoFi AI Webhook',
 			// Without an attached credential the endpoint takes any caller
 			credentials:
 				options.credential === undefined ? undefined : { servicelyAiToolAuthApi: { id: '1' } },
@@ -143,7 +143,7 @@ describe('node description', () => {
 			{ name: 'servicelyApi', displayName: 'Servicely API', required: true },
 			{
 				name: 'servicelyAiToolAuthApi',
-				displayName: 'Servicely AI Agent Tool Auth',
+				displayName: 'Servicely SoFi AI Webhook Auth',
 				required: true,
 				testedBy: 'servicelyAiToolAuthTest',
 			},

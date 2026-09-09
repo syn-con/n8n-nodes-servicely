@@ -23,7 +23,7 @@ function options(name: string): INodePropertyOptions[] {
 	return (property?.options ?? []) as INodePropertyOptions[];
 }
 
-describe('how the AI Agent Tool presents itself', () => {
+describe('how the SoFi AI Webhook presents itself', () => {
 	// The half that answers is a resource of the action node, not a node of its
 	// own — n8n verification allows a package only one regular node.
 	it('carries the answer on the action node', () => {
@@ -90,6 +90,15 @@ describe('how the AI Agent Tool presents itself', () => {
 	});
 
 	it('names the credential after the tool', () => {
-		expect(AUTH_DISPLAY_NAME).toBe('Servicely AI Agent Tool Auth');
+		expect(AUTH_DISPLAY_NAME).toBe('Servicely SoFi AI Webhook Auth');
+	});
+
+	// The type is the identity a saved workflow names; the display name is not, so
+	// the 1.5.0 rename moved one and deliberately left the other.
+	it('renames what a person reads without touching what a workflow names', () => {
+		expect(TOOL_DISPLAY_NAME).toBe('Servicely SoFi AI Webhook');
+		expect(TRIGGER_DISPLAY_NAME).toBe('Servicely SoFi AI Webhook Trigger');
+		expect(TRIGGER_NODE_TYPE).toBe('servicelyAiAgentToolTrigger');
+		expect(RESPONSE_RESOURCE).toBe('aiAgentTool');
 	});
 });

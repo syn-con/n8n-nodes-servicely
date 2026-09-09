@@ -4,9 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
 
-An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform. It talks to the Servicely JSON REST API (v1) so your workflows can read and write records on any table (Incident, Request, User, Group, …), manage file attachments, run a full-text Global Search, raise requests against the service catalog, and call instance controllers directly. A companion **Servicely Trigger** node starts workflows on a schedule by dequeuing async-queue messages or polling a table by filter, and the **Servicely AI Agent Tool** pair exposes a workflow as a tool the service desk agent can call.
+An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform. It talks to the Servicely JSON REST API (v1) so your workflows can read and write records on any table (Incident, Request, User, Group, …), manage file attachments, run a full-text Global Search, raise requests against the service catalog, and call instance controllers directly. A companion **Servicely Trigger** node starts workflows on a schedule by dequeuing async-queue messages or polling a table by filter, and the **Servicely SoFi AI Webhook** pair exposes a workflow as a tool the service desk agent can call.
 
-[Installation](#installation) · [Credentials](#credentials) · [Operations](#operations) · [Trigger](#trigger) · [AI Agent Tool](#ai-agent-tool) · [Examples](#examples) · [Compatibility](#compatibility) · [Development](#development)
+[Installation](#installation) · [Credentials](#credentials) · [Operations](#operations) · [Trigger](#trigger) · [SoFi AI Webhook](#sofi-ai-webhook) · [Examples](#examples) · [Compatibility](#compatibility) · [Development](#development)
 
 ---
 
@@ -49,7 +49,7 @@ Create a **Servicely API** credential:
 
 Secrets are stored encrypted by n8n and are never written into workflow data.
 
-The **Servicely AI Agent Tool Auth API** credential is separate and points the other way: it describes what an incoming tool call has to present (**Basic Auth**, **Header Auth**, or a **JWT** bearer token verified with a shared secret or a PEM public key). See [AI Agent Tool](#ai-agent-tool).
+The **Servicely SoFi AI Webhook Auth API** credential is separate and points the other way: it describes what an incoming tool call has to present (**Basic Auth**, **Header Auth**, or a **JWT** bearer token verified with a shared secret or a PEM public key). See [SoFi AI Webhook](#sofi-ai-webhook).
 
 ## Operations
 
@@ -289,17 +289,17 @@ The **Servicely Trigger** is a polling node — n8n adds a **Poll Times** schedu
 - **Timeout (ms)** — per-request timeout (default 30000).
 - **Max Retries** — retries on rate limits (429), server errors (5xx), and network failures, with exponential backoff + jitter (default 3; `0` disables). `Retry-After` is honored. Client errors (400/401/404/422) are never retried.
 
-## AI Agent Tool
-The **Servicely AI Agent Tool Trigger** turns a workflow into a tool the Servicely service desk agent can call. It declares the tool, serves it on an HTTP `POST` endpoint, and validates the call before the workflow runs. The answer goes back through the **Servicely** node, under the **AI Agent Tool** resource.
+## SoFi AI Webhook
+The **Servicely SoFi AI Webhook Trigger** turns a workflow into a tool the Servicely service desk agent can call. It declares the tool, serves it on an HTTP `POST` endpoint, and validates the call before the workflow runs. The answer goes back through the **Servicely** node, under the **AI Agent Tool** resource.
 
 | | what it does |
 | --- | --- |
-| **Servicely AI Agent Tool Trigger** | declares and serves the tool |
+| **Servicely SoFi AI Webhook Trigger** | declares and serves the tool |
 | **Servicely** → *AI Agent Tool* → *Send Response* | answers the call |
 
 The two jobs cannot live on one node: n8n opens a webhook for every instance of a node type that declares one, so a single node would open a dead endpoint for every response node in the workflow. They are the trigger and the action node — and not two nodes of their own — because [n8n verification](https://docs.n8n.io/integrations/creating-nodes/build/reference/verification-guidelines/) allows a package one regular node, with a trigger for the same service alongside it. The responder was its own `servicelyAiAgentTool` node until 1.2.0; see [Compatibility](#compatibility).
 
-### Servicely AI Agent Tool (trigger)
+### Servicely SoFi AI Webhook (trigger)
 
 The tool is exported under the **node's** name (as `[n8n] <node name>`), so the node asks for no name of its own — rename the node on the canvas and the next activation renames the tool. One node is one tool, so a workflow can declare several by holding several AI Agent Tool nodes; name them after what they do, since two nodes both left at the default "Servicely AI Agent Tool" register two tools the agent cannot tell apart.
 
@@ -338,7 +338,7 @@ None of the fields take an expression. The node has no input, and its values are
 
 The emitted item carries `body`, `parameters` (the declared arguments the call actually sent, after coercion), `headers`, `query`, `params`, `validation`, and — with a JWT credential — the verified `jwt` payload.
 
-The node takes two credentials, both required: the **Servicely API** one (it backs the AI Agents, AI Assistants and Roles lists, and the registration below) and a **Servicely AI Agent Tool Auth API** one deciding what a caller has to present. The JWT algorithm is taken from the credential, not from the token, so a caller cannot downgrade the signature.
+The node takes two credentials, both required: the **Servicely API** one (it backs the AI Agents, AI Assistants and Roles lists, and the registration below) and a **Servicely SoFi AI Webhook Auth API** one deciding what a caller has to present. The JWT algorithm is taken from the credential, not from the token, so a caller cannot downgrade the signature.
 
 ### Registration in the service desk
 
@@ -351,7 +351,7 @@ Activating the workflow registers it as a tool; deactivating removes it. n8n dri
 - **On deactivate** the tool comes out of every agent's and assistant's `Tools` first, so none is left pointing at a record that is about to go — a failure there is logged and the delete goes ahead anyway. The record is then looked up by that same Key and deleted if it is there. Nothing is cached between the hooks — the Key is the tool's whole identity, so a restart or a record edited in the service desk changes nothing about what the hooks find.
 - **"Listen for test event" registers the tool** like an activation does, so it can be exercised from the service desk while you are still building the workflow. Stopping the listen deliberately does *not* remove the registration: n8n tears a test webhook down exactly the way it deregisters a production one, and removing it there would deregister a workflow that is active at the same time.
 - Nothing left to remove is not treated as a failure, and removal never throws: n8n clears a workflow's webhooks on the way *into* activation as well, so a throw there would block activating the workflow too. Real failures (an expired token, a 500) are logged at error level instead.
-- The Key is the **node id**, so each Servicely AI Agent Tool node owns exactly one tool record and a second node in the same workflow registers a second tool of its own. The id is n8n's, and it survives everything a workflow can do to a node except deleting it — renaming it, moving it, editing its parameters — so a tool keeps its registration, and its links to agents and assistants, across all of those. Delete the node and the next activation deregisters its tool.
+- The Key is the **node id**, so each Servicely SoFi AI Webhook node owns exactly one tool record and a second node in the same workflow registers a second tool of its own. The id is n8n's, and it survives everything a workflow can do to a node except deleting it — renaming it, moving it, editing its parameters — so a tool keeps its registration, and its links to agents and assistants, across all of those. Delete the node and the next activation deregisters its tool.
 - Renaming the node renames the tool (`Name` is always sent), and its links survive that too, since they hang off the record rather than its name.
 - A node with no id — a workflow assembled outside the editor — fails with "The node has no id yet".
 
@@ -393,7 +393,7 @@ A resource of the **Servicely** node, not a node of its own. It is the only reso
 
 **Expose a workflow as an agent tool**
 
-1. **Servicely AI Agent Tool Trigger**, renamed on the canvas to *Create Incident* (the tool registers as `[n8n] Create Incident`), Prompt "Creates an incident for a user and returns its number", Handler = your webhook handler, AI Agent Names or IDs = the service desk agent.
+1. **Servicely SoFi AI Webhook Trigger**, renamed on the canvas to *Create Incident* (the tool registers as `[n8n] Create Incident`), Prompt "Creates an incident for a user and returns its number", Handler = your webhook handler, AI Agent Names or IDs = the service desk agent.
 2. *Parameters:* `shortDescription` (String, required, "What is wrong"), `priority` (Integer, **Param Required** off, "1 highest to 4 lowest — omit for the default").
 3. *Options:* **Mutates Ticket** on, since the call creates a record.
 4. **Servicely → Object → Create**, Table `Incident`, fields taken from `={{ $json.parameters.shortDescription }}` and `={{ $json.parameters.priority }}` — the second is absent when the agent omits it, so give it a default downstream.
@@ -401,7 +401,8 @@ A resource of the **Servicely** node, not a node of its own. It is the only reso
 
 ## Compatibility
 
-- **The AI Agent Tool trigger's script and path moved out of the node in 1.4.0.** The **Options -> Execution Script** box and the **Path** field are **removed**, and a required **Handler** selector takes their place: the script now lives on the instance, in a `C_n8n_Webhook_Handler` record, and the node only says which one to run. Two things change for a workflow that is already active:
+- **The trigger is called *Servicely SoFi AI Webhook Trigger* as of 1.5.0.** A display-name change only: the node type is still `servicelyAiAgentToolTrigger`, the responder is still **Servicely -> AI Agent Tool -> Send Response**, and the endpoint credential is still `servicelyAiToolAuthApi` — only its label reads **Servicely SoFi AI Webhook Auth API** now. A saved workflow keeps working untouched; it shows the new name the moment the package is updated, and a node left at the old default canvas name keeps that name (and so keeps registering its tool as `[n8n] Servicely AI Agent Tool`) until it is renamed by hand.
+- **The trigger's script and path moved out of the node in 1.4.0.** The **Options -> Execution Script** box and the **Path** field are **removed**, and a required **Handler** selector takes their place: the script now lives on the instance, in a `C_n8n_Webhook_Handler` record, and the node only says which one to run. Two things change for a workflow that is already active:
   - **Its endpoint moves.** The tool used to answer on the Path you typed; it now answers on `/webhook/<node id>`. Re-activating registers the new URL into the handler's script, so nothing has to be edited — but anything else calling the old path directly has to be pointed at the new one.
   - **A script written in the node is dropped.** Create a `C_n8n_Webhook_Handler` record holding it (`C_Name` for the label, `C_ExecutionScript` for the script, `@@WEBHOOK_URL@@` where the endpoint goes), select it as the **Handler**, and re-activate. Until a handler is selected the activation fails with `No Servicely webhook handler is selected` rather than registering a tool that does nothing when the agent calls it. The default script the node used to generate is gone with the box, so a workflow that never wrote one needs a handler record too.
 

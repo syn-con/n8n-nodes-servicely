@@ -116,7 +116,7 @@ export class ServicelyAIToolTrigger implements INodeType {
 		properties: [
 			{
 				displayName:
-					'The attached Servicely AI Agent Tool Auth credential decides what a caller has to present: Basic, Header or JWT authentication.',
+					'The attached Servicely SoFi AI Webhook Auth credential decides what a caller has to present: Basic, Header or JWT authentication.',
 				name: 'authenticationNotice',
 				type: 'notice',
 				default: '',

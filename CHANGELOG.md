@@ -7,6 +7,23 @@ All notable changes to this project are documented here.
 > release, so the durable home for migration notes is the **Compatibility**
 > section of `README.md`.
 
+## 1.5.0
+
+### Changed
+
+- **The AI Agent Tool trigger is now the *Servicely SoFi AI Webhook Trigger*.** A
+  display-name change, reaching everything the feature is called to a person: the
+  entry in the nodes panel, the name a dropped node gets on the canvas (so a new
+  node registers its tool as `[n8n] Servicely SoFi AI Webhook`), and the endpoint
+  credential's label, **Servicely SoFi AI Webhook Auth API**.
+
+  Nothing a workflow names moved: the node type is still
+  `servicelyAiAgentToolTrigger`, the credential is still `servicelyAiToolAuthApi`,
+  and the responder is still **Servicely -> AI Agent Tool -> Send Response** with
+  its `aiAgentTool` resource value. A saved workflow keeps working untouched, and a
+  node left at the old default canvas name keeps that name — and so keeps
+  registering `[n8n] Servicely AI Agent Tool` — until it is renamed by hand.
+
 ## 1.4.0
 
 ### Changed

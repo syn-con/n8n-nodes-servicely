@@ -1,7 +1,7 @@
 import type { CodexData } from 'n8n-workflow';
 
 /**
- * How the AI Agent Tool feature presents itself.
+ * How the SoFi AI Webhook feature presents itself.
  *
  * It is two halves: the trigger here, which opens the endpoint a Servicely agent
  * calls and registers the tool with the service desk, and the answer to that
@@ -18,7 +18,11 @@ import type { CodexData } from 'n8n-workflow';
  * the pair is found by name and alias instead (see {@link TOOL_CODEX}).
  */
 
-/** The stem the trigger's type is built on. Not a node type of its own since 1.2.0. */
+/**
+ * The stem the trigger's type is built on. Not a node type of its own since 1.2.0,
+ * and not what the feature is called any more either — 1.5.0 renamed it to
+ * {@link TOOL_DISPLAY_NAME}, which the type deliberately did not follow.
+ */
 const TOOL_TYPE_STEM = 'servicelyAiAgentTool';
 
 /** The trigger's node type. Unchanged since 0.7.0 — a saved workflow names it. */
@@ -30,8 +34,13 @@ export const RESPONSE_NODE_TYPE = 'servicely';
 /** The resource of {@link RESPONSE_NODE_TYPE} that answers a tool call. */
 export const RESPONSE_RESOURCE = 'aiAgentTool';
 
-/** What the feature is called wherever it is named to a person. */
-export const TOOL_DISPLAY_NAME = 'Servicely AI Agent Tool';
+/**
+ * What the feature is called wherever it is named to a person: the trigger, the
+ * node it drops on the canvas, the credential guarding its endpoint. Renamed in
+ * 1.5.0 — the node *type* and the responder's `aiAgentTool` resource keep the
+ * names they were published under, since a saved workflow names both.
+ */
+export const TOOL_DISPLAY_NAME = 'Servicely SoFi AI Webhook';
 
 /**
  * The trigger's name in the editor. It has to say "Trigger" — that is how the
@@ -60,8 +69,11 @@ export const TOOL_CODEX: CodexData = {
 	categories: ['Productivity', 'Utility'],
 	alias: [
 		'Servicely',
+		'SoFi',
+		'Webhook',
 		'AI',
 		'Agent',
+		'Agent Tool',
 		'Assistant',
 		'Tool',
 		'ITSM',

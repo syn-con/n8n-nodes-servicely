@@ -30,7 +30,7 @@ const showForOperation = { resource: ['aiAgentTool'], operation: ['sendResponse'
 export const description: INodeProperties[] = [
   {
     displayName:
-      'The Servicely AI Agent Tool Trigger that starts this workflow must have "Respond" set to "Using Servicely Node" — it refuses a call otherwise, rather than leaving this operation with an answer nobody is waiting for. n8n keeps the request open until this node runs, so a branch that never reaches it never answers, and the service desk stops waiting after the trigger\'s Tool Timeout.',
+      'The Servicely SoFi AI Webhook Trigger that starts this workflow must have "Respond" set to "Using Servicely Node" — it refuses a call otherwise, rather than leaving this operation with an answer nobody is waiting for. n8n keeps the request open until this node runs, so a branch that never reaches it never answers, and the service desk stops waiting after the trigger\'s Tool Timeout.',
     name: 'responseModeNotice',
     type: 'notice',
     default: '',
@@ -142,7 +142,7 @@ export const description: INodeProperties[] = [
     },
     placeholder: '{{ $json.validation.errors }}',
     description:
-      'Optional machine readable details added to the error, e.g. the validation errors of the Servicely AI Agent Tool Trigger',
+      'Optional machine readable details added to the error, e.g. the validation errors of the Servicely SoFi AI Webhook Trigger',
     displayOptions: { show: { ...showForOperation, respondWith: ['error'] } },
   },
   {
@@ -207,8 +207,8 @@ export const description: INodeProperties[] = [
 ];
 
 /**
- * Answers the agent that called a Servicely AI Agent Tool, for a workflow started
- * by the Servicely AI Agent Tool Trigger set to "Using Servicely Node".
+ * Answers the agent that called a Servicely SoFi AI Webhook, for a workflow started
+ * by the Servicely SoFi AI Webhook Trigger set to "Using Servicely Node".
  *
  * One request gets one answer, but the router dispatches per item, so the response
  * is built from *all* the items reaching the node and sent on the first pass only.

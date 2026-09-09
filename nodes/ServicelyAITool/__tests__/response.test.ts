@@ -37,7 +37,7 @@ function makeContext(responseMode: string, children: Child[]) {
 	return {
 		getNodeParameter: (name: string, fallback?: unknown) =>
 			name === 'responseMode' ? responseMode : fallback,
-		getNode: () => ({ name: 'Servicely AI Agent Tool', type: 'servicelyAiAgentToolTrigger' }),
+		getNode: () => ({ name: 'Servicely SoFi AI Webhook', type: 'servicelyAiAgentToolTrigger' }),
 		getChildNodes: () =>
 			children.map((child, index) => ({ name: `n${index}`, ...child })),
 	} as unknown as IWebhookFunctions;
@@ -265,7 +265,7 @@ describe('checkResponseModeConfiguration', () => {
 		const calls: Array<unknown> = [];
 		const context = {
 			getNodeParameter: () => 'onReceived',
-			getNode: () => ({ name: 'Servicely AI Agent Tool', type: 'servicelyAiAgentToolTrigger' }),
+			getNode: () => ({ name: 'Servicely SoFi AI Webhook', type: 'servicelyAiAgentToolTrigger' }),
 			getChildNodes: (_name: string, options?: unknown) => {
 				calls.push(options);
 				return [];

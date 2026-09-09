@@ -5,7 +5,7 @@ import { router } from '../actions/router';
 import { makeExecuteCtx } from './_stubs';
 
 /**
- * The AI Agent Tool resource: the answer to a call the Servicely AI Agent Tool
+ * The AI Agent Tool resource: the answer to a call the Servicely SoFi AI Webhook
  * Trigger let in. Driven through the router rather than the operation module,
  * because the router is what dispatches per item and the response is deliberately
  * built once for the whole batch.

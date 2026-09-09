@@ -140,7 +140,7 @@ function authenticateBasic(context: IWebhookFunctions, credential: AuthCredentia
 function authenticateHeader(context: IWebhookFunctions, credential: AuthCredential): void {
 	if (!credential.headerName) {
 		throw new NodeOperationError(context.getNode(), 'The credential is missing a header name', {
-			description: 'Set "Header Name" on the Servicely AI Agent Tool Auth credential.',
+			description: 'Set "Header Name" on the Servicely SoFi AI Webhook Auth credential.',
 		});
 	}
 
@@ -178,7 +178,7 @@ function authenticateJwt(context: IWebhookFunctions, credential: AuthCredential)
 		throw new NodeOperationError(
 			context.getNode(),
 			`The credential is missing a ${usesPassphrase ? 'secret' : 'public key'}`,
-			{ description: 'Complete the JWT Auth fields on the Servicely AI Agent Tool Auth credential.' },
+			{ description: 'Complete the JWT Auth fields on the Servicely SoFi AI Webhook Auth credential.' },
 		);
 	}
 
@@ -239,7 +239,7 @@ export async function authenticateRequest(
 			throw new NodeOperationError(
 				context.getNode(),
 				`The credential has an unknown type "${String(credential.type)}"`,
-				{ description: 'Pick a type on the Servicely AI Agent Tool Auth credential.' },
+				{ description: 'Pick a type on the Servicely SoFi AI Webhook Auth credential.' },
 			);
 	}
 }
