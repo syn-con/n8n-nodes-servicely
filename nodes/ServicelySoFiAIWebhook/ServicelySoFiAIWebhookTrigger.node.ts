@@ -116,13 +116,6 @@ export class ServicelySoFiAIWebhookTrigger implements INodeType {
 		properties: [
 			{
 				displayName:
-					'Requires the Servicely package installed on your Servicely instance: it holds the handler scripts this tool runs, and the Handler list below is empty without it. Contact SYNERGY for details.',
-				name: 'packageNotice',
-				type: 'notice',
-				default: '',
-			},
-			{
-				displayName:
 					'The attached Servicely SoFi AI Webhook Auth credential decides what a caller has to present: Basic, Header or JWT authentication.',
 				name: 'authenticationNotice',
 				type: 'notice',

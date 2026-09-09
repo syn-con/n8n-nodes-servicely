@@ -7,6 +7,15 @@ All notable changes to this project are documented here.
 > release, so the durable home for migration notes is the **Compatibility**
 > section of `README.md`.
 
+## 1.8.1
+
+### Changed
+
+- **The package requirement is stated once, in the credential.** The trigger's own
+  notice is gone — the credential modal is where both halves of the setup are
+  configured — and the credential's reads *"Ensure the Servicely SoFi AI Webhook
+  package is installed in the target system"*, with a link for the details.
+
 ## 1.8.0
 
 ### Changed

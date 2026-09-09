@@ -28,7 +28,7 @@ describe('shape', () => {
 
     expect(notice.type).toBe('notice');
     expect(notice.displayName).toBe(
-      'Requires the Servicely package installed on your Servicely instance. Contact SYNERGY for details.',
+      'Ensure the Servicely SoFi AI Webhook package is installed in the target system. Learn more <a href="https://www.synergy.eu" target="_blank">here</a>',
     );
   });
 

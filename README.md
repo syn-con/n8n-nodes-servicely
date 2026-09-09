@@ -303,7 +303,7 @@ The two jobs cannot live on one node: n8n opens a webhook for every instance of 
 
 The tool is exported under the **node's** name (as `[n8n] <node name>`), so the node asks for no name of its own — rename the node on the canvas and the next activation renames the tool. One node is one tool, so a workflow can declare several by holding several SoFi AI Webhook nodes; name them after what they do, since two nodes both left at the default "Servicely SoFi AI Webhook" register two tools the agent cannot tell apart.
 
-> **Requires the Servicely package installed on your Servicely instance.** It holds the handler scripts a tool runs, in a `C_n8n_Webhook_Handler` table Servicely does not ship — without it the **Handler** list is empty and no tool can be activated. Contact SYNERGY ([support@synergy.eu](mailto:support@synergy.eu)) for details.
+> **Ensure the Servicely SoFi AI Webhook package is installed in the target system.** It holds the handler scripts a tool runs, in a `C_n8n_Webhook_Handler` table Servicely does not ship — without it the **Handler** list is empty and no tool can be activated. The credential modal says the same; learn more at [synergy.eu](https://www.synergy.eu).
 
 - **Description** — what the tool does and when to call it. Exported with the tool, so the agent reads it when deciding.
 - **Handler Name or ID** — the handler whose script the service desk runs for this tool, required.

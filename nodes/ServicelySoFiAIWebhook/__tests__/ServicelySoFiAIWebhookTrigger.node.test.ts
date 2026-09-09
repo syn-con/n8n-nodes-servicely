@@ -171,14 +171,11 @@ describe('node description', () => {
 		expect(property('prompt').displayName).toBe('Description');
 	});
 
-	// The handler scripts come from a Servicely-side package, so the panel says where
-	// they come from rather than leaving an empty Handler list unexplained.
-	it('notes that the Servicely package has to be installed', () => {
-		const notice = node.description.properties.find((entry) => entry.name === 'packageNotice');
+	// Said once, in the credential modal — the node's own panel does not repeat it
+	it('carries no package notice of its own', () => {
+		const named = node.description.properties.map((entry) => entry.name);
 
-		expect(notice?.type).toBe('notice');
-		expect(notice?.displayName).toContain('Requires the Servicely package');
-		expect(notice?.displayName).toContain('SYNERGY');
+		expect(named).not.toContain('packageNotice');
 	});
 
 	// The tool is registered under the node id, and answers on it too — so renaming

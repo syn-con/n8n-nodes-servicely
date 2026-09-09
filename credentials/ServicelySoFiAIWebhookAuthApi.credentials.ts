@@ -18,9 +18,9 @@ export class ServicelySoFiAIWebhookAuthApi implements ICredentialType {
 		{
 			// The endpoint this credential guards is only half the feature: the scripts the
 			// service desk runs for a tool come from a Servicely-side package, so the modal
-			// says so rather than leaving an empty Handler list on the node to explain it
+			// says so — it is the one place both halves of the setup are configured
 			displayName:
-				'Requires the Servicely package installed on your Servicely instance. Contact SYNERGY for details.',
+				'Ensure the Servicely SoFi AI Webhook package is installed in the target system. Learn more <a href="https://www.synergy.eu" target="_blank">here</a>',
 			name: 'packageNotice',
 			type: 'notice',
 			default: '',
