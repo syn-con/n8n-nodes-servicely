@@ -7,6 +7,16 @@ All notable changes to this project are documented here.
 > release, so the durable home for migration notes is the **Compatibility**
 > section of `README.md`.
 
+## 1.8.3
+
+### Changed
+
+- **The README is written for someone configuring the nodes**, not maintaining
+  them: no endpoint paths, internal table and field names, or design rationale.
+  Every field and option a workflow sets is still documented, as are the handler
+  setup steps and the `ServiceCatalog` controller script, and the Compatibility
+  notes now say what to do rather than what changed inside.
+
 ## 1.8.2
 
 ### Changed

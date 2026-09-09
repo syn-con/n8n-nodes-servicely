@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
 
-An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform. It talks to the Servicely JSON REST API (v1) so your workflows can read and write records on any table (Incident, Request, User, Group, …), manage file attachments, run a full-text Global Search, raise requests against the service catalog, and call instance controllers directly. A companion **Servicely Trigger** node starts workflows on a schedule by dequeuing async-queue messages or polling a table by filter, and the **Servicely SoFi AI Webhook** pair exposes a workflow as a tool the service desk agent can call.
+An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform. Your workflows can read and write records on any table (Incident, Request, User, Group, …), manage attachments, run a full-text Global Search, raise service catalog requests, and call instance controllers. A **Servicely Trigger** node starts workflows from an async queue or by polling a table, and the **Servicely SoFi AI Webhook** pair exposes a workflow as a tool the service desk agent can call.
 
 [Installation](#installation) · [Credentials](#credentials) · [Operations](#operations) · [Trigger](#trigger) · [SoFi AI Webhook](#sofi-ai-webhook) · [Examples](#examples) · [Compatibility](#compatibility)
 
@@ -12,28 +12,11 @@ An [n8n](https://n8n.io) community node for the **Servicely** ITSM/ESM platform.
 
 ## Installation
 
-### In n8n (community nodes)
-
 1. Go to **Settings → Community Nodes → Install**.
 2. Enter `@synergyconsulting/n8n-nodes-servicely` and confirm.
-3. The **Servicely** node and **Servicely API** credential become available after n8n restarts.
+3. The **Servicely** nodes and credentials become available after n8n restarts.
 
 > Community nodes require self-hosted n8n, or n8n Cloud with verified community nodes enabled.
-
-### Local development (run it in n8n)
-
-With a global n8n installed (`npm install -g n8n`):
-
-```bash
-cd n8n-nodes-servicely
-npm install
-npm run dev
-```
-
-`npm run dev` builds the node, links it into n8n's custom-nodes directory
-(`~/.n8n/custom/node_modules/@synergyconsulting/n8n-nodes-servicely`), and starts n8n at
-<http://localhost:5678>. n8n loads nodes at startup, so after changing code,
-stop it (Ctrl+C) and re-run `npm run dev` to pick up the changes.
 
 ## Credentials
 
@@ -41,49 +24,38 @@ Create a **Servicely API** credential:
 
 | Field | Notes |
 |-------|-------|
-| **Instance URL** | Base URL of your instance, e.g. `https://your-instance.servicely.ai`. No trailing slash, no `/v1`. |
+| **Instance URL** | Base URL of your instance, e.g. `https://your-instance.servicely.ai`. No trailing slash. |
 | **Authentication Method** | `Bearer Token`, `Basic Auth`, or `HMAC`. |
-| **API Token** | For Bearer/HMAC. The full System API Token (prefix + secret). Manage under **Administration → Integration → System API Tokens**. |
+| **API Token** | For Bearer/HMAC. The full System API Token. Manage under **Administration → Integration → System API Tokens**. |
 | **Username / Password** | For Basic Auth. |
-| **Shared Secret** | For HMAC — used to sign each request with HMAC-SHA256. |
+| **Shared Secret** | For HMAC. |
 
 Secrets are stored encrypted by n8n and are never written into workflow data.
 
-The **Servicely SoFi AI Webhook Auth API** credential is separate and points the other way: it describes what an incoming tool call has to present (**Basic Auth**, **Header Auth**, or a **JWT** bearer token verified with a shared secret or a PEM public key). See [SoFi AI Webhook](#sofi-ai-webhook).
+The **Servicely SoFi AI Webhook Auth API** credential points the other way: it describes what an incoming tool call has to present — **Basic Auth**, **Header Auth**, or a **JWT** bearer token. See [SoFi AI Webhook](#sofi-ai-webhook).
 
 ## Operations
 
 ### Object (any table)
 
-| Operation | Method | Notes |
-|-----------|--------|-------|
-| **Get** | `GET /v1/{Table}/{id}` | Fetch a single record. |
-| **Get Many** | `GET /v1/{Table}` | List records, with **Return All** (auto-paginates) or a **Limit**. |
-| **Create** | `POST /v1/{Table}` | Create from **Fields to Set**. |
-| **Update** | `PATCH /v1/{Table}/{id}` | Patch the given fields. |
-| **Delete** | `DELETE /v1/{Table}/{id}` | Delete by id. |
+**Get**, **Get Many**, **Create**, **Update**, and **Delete** on any table.
 
-**Choosing the table and its fields:**
+- **Table** — pick it from the list, or switch to **By Name** for a name or an expression.
+- **Record ID** (Get / Update / Delete) — typed or from an expression, e.g. `{{ $json.id }}`.
+- **Fields to Set** (Create / Update) — pick a field from the list, or name it yourself for a dot-walked relation such as `Requestor.Email`.
+- **Return All** (Get Many) — fetch every match, or set a **Limit**.
 
-- **Table** — **From List** reads the instance's `TableDefinition` registry and stores each row's `Table` value: the API table name that goes into `/v1/{Table}`. Or switch to **By Name** for a table name / expression.
-- **Record ID** (Get / Update / Delete) — a plain id field, typed or from an expression (`{{ $json.id }}`). There is no picker: the table is arbitrary, so an id coming from an upstream node wires straight through instead of being hunted for in a list.
-- **Field Name** (in **Filters** and **Fields to Set**) — **From List** shows the selected table's fields: the table name is resolved to its `TableDefinition` id, then `FieldDefinition` rows with that `TableId` are listed. Or switch to **By Name** for anything the registry cannot list: a dot-walked relation (`Requestor.Email`), or a field on a table that is itself set by expression.
+**Options** (Get / Get Many):
 
-**Selecting data** (Get / Get Many → *Options*):
-
-The field entries are dropdowns loaded from the selected table's `FieldDefinition` rows — no typing field names by hand. Change the **Table** and the lists reload. A table set by an expression cannot be resolved at design time, so the dropdown comes up empty; switch the parameter to an expression there and pass a comma-separated list (which is also what workflows saved before these dropdowns keep sending).
-
-- **Fields** — multi-select of the fields to return. Empty means the API default (every field).
-- **Display Value Fields** — multi-select of reference fields to return as `{ value, displayValue }`.
-- **Relation Fields** — still a typed comma-separated list (`Requestor.Name,Requestor.Manager.Name`): the registry holds one table's own fields, while a relation path walks through other tables.
-- **Sort Field** (single-select of the same field list) / **Sort Descending**.
+- **Fields** — which fields to return. Empty returns them all.
+- **Display Value Fields** — reference fields returned as `{ value, displayValue }`.
+- **Relation Fields** — a comma-separated list of relation paths, e.g. `Requestor.Name`.
+- **Sort Field** / **Sort Descending**.
 
 **Filtering** (Get Many):
 
-- **Filters** — a simple builder: pick a field (from the list or by name), an operator, and a value; conditions are combined with **AND**.
-  - Operators: `=`, `!=`, `startswith`, `contains`, `doesnotcontain`, `isempty`, `isnotempty`, `in`, `notIn`, `<`, `>`, `<=`, `>=`, `between`.
-  - For `in` / `notIn` / `between`, enter a comma-separated list. `isempty` / `isnotempty` take no value.
-- **Query (JSON)** (in *Options*) — for `OR`/`NOR` or nested logic. When set, it **takes precedence** over the simple Filters. Example:
+- **Filters** — pick a field, an operator, and a value; conditions are combined with **AND**. Operators: `=`, `!=`, `startswith`, `contains`, `doesnotcontain`, `isempty`, `isnotempty`, `in`, `notIn`, `<`, `>`, `<=`, `>=`, `between`. For `in` / `notIn` / `between` enter a comma-separated list; `isempty` / `isnotempty` take no value.
+- **Query (JSON)** (in *Options*) — for `OR` or nested logic. When set, it takes precedence over the simple Filters:
 
   ```json
   { "and": [
@@ -94,84 +66,43 @@ The field entries are dropdowns loaded from the selected table's `FieldDefinitio
 
 ### Attachment
 
-| Operation | Notes |
-|-----------|-------|
-| **Upload** | Reads a binary field from the input item and attaches it to a parent record. |
-| **Download** | Fetches an attachment by id and emits it as binary output. |
-| **List** | Lists the attachments on a parent record (filterable by related field). |
+- **Upload** — attaches a binary field of the incoming item to a record.
+- **Download** — fetches an attachment by id and emits it as binary.
+- **List** — lists the attachments on a record.
 
-`Parent Record` uses Servicely's `{recordId}:{tableName}` format (e.g. `abc123:Incident`), built for you from the **Parent Table** + **Parent Record ID** fields.
-
-**Attachment ID** (Download) is a plain id field like **Record ID** — typed or from an expression (`{{ $json.id }}`), with no picker, since the id normally comes from an upstream List or Upload.
+The parent record is built for you from **Parent Table** + **Parent Record ID**.
 
 ### Global Search
 
-Full-text search over one table through the instance's Global Search controller (`POST {instanceUrl}/controller/GlobalSearch`) rather than through a `/v1` query.
+Full-text search over one table.
 
-| Operation | Body | Notes |
-|-----------|------|-------|
-| **Search** | `{ request_type: "search", table_class, text }` | Search one table for the given text. |
-| **Batch Search** | `{ request_type: "batch_search", table_class, text, limit }` | Same request, capped at **Limit** (default 50). |
+- **Search** — search the selected table for the given text.
+- **Batch Search** — the same, capped at **Limit** (default 50).
 
-- **Table** — **From List** posts `{"request_type": "search_config"}` to the same controller and lists the tables it is configured to search, taking each entry's `table` as both label and value (its `id` is not used). That value is sent as `table_class`. Or switch to **By Name** for a table class / expression.
-- **Search Text** — the text to match.
-
-The response is emitted like any other controller answer: a list of hits fans out to one item per hit, an object becomes one item, a scalar is wrapped as `{ data: ... }`, and an empty response yields `{ success: true }`.
+**Table** offers the tables the instance is configured to search; **Search Text** is what to match. Each hit is emitted as its own item.
 
 ### Queue
 
-Acknowledge a message dequeued by the [Servicely Trigger](#trigger) back to the Async Integration controller (`POST {instanceUrl}/controller/AsyncIntegration`) — the counterpart of the Node-RED Success/Failure reply nodes.
+Acknowledges a message dequeued by the [Servicely Trigger](#trigger).
 
-| Operation | Sends | Notes |
-|-----------|-------|-------|
-| **Reply Success** | `action: success`, `status: ok` | Mark the message as processed successfully. |
-| **Reply Failure** | `action: fail`, `status: error` | Mark the message as failed. |
+- **Reply Success** — mark the message as processed.
+- **Reply Failure** — mark it as failed.
 
-- **Reply To** — the message id, defaulting to `={{ $json._servicely.replyTo }}` (emitted by the trigger), so it auto-wires when the trigger feeds this node.
-- **Payload** — the response payload returned to Servicely (defaults to the incoming item's `{{ $json }}`).
+**Reply To** defaults to `={{ $json._servicely.replyTo }}`, so it wires itself when the trigger feeds this node. **Payload** is the response sent back to Servicely, defaulting to the incoming item.
 
 ### Service Catalog
 
-Raise a request against a published catalog item through the instance's Service Catalog controller. It is a single POST: the node does not read the catalog item, does not create the request record and does not write `Answer` rows — where the record goes and how each answer is stored is the instance's to decide, and the controller owns all of it.
+- **Create Request** — raise a request against a published catalog item.
 
-| Operation | Method | Notes |
-|-----------|--------|-------|
-| **Create Request** | `POST {instanceUrl}/controller/ServiceCatalog` | Sends the catalog item and the answers keyed by question record id. |
+**Catalog Item** offers the published items by name. **Questions** then renders that item's questions as a form; pick another item and the form reloads. An answer left blank is not sent, so an optional question that was skipped stays unanswered.
 
-```json
-{
-  "catalogItem": "60fded6e8ca511eda18bbe07b09d6f655",
-  "answers": {
-    "60fded6e8ca511eda18bbe07b09d6f62": "5659d8d08b4c11f1b8fa2eb7ca4b3cdd",
-    "98fa827f8ca511eda18bbe07b09d6f62": "someone@example.com",
-    "7e0028718ca711eda18bbe07b09d6f62": "free text",
-    "4e24c3ee8ca811eda18bbe07b09d6f62": "123132"
-  }
-}
-```
+The instance decides where the request lands and how each answer is stored, and answers with the request it created, so `{{ $json.TargetRecordID }}` chains into the next node.
 
-- **Catalog Item** — **From List** shows `CatalogItem` records, storing each record's id and labelling it by **`Name`**. This is the one record picker that does not prefer `Number`: a catalog item is published, and recognised, under its name, and a list of numbers would be unusable. An item carrying no name is labelled with its id rather than dropped, so it is never silently missing from the list. Or switch to **By ID** for an id / expression.
-- **Questions** — a resource mapper rendering the questions the selected item asks as a form. Its schema comes from every `Question` row whose `Parent` is `{catalogItemId}:CatalogItem` (fetched in full, not one page — a question left off the form is an answer the request cannot supply), and each field's **id is the question's record id**, which is what `answers` is keyed by.
-  - Questions are ordered by the `Question` row's `Order` field (read as a number or as the string a JSON field holds it in); a row without a usable one sorts last, and ties fall back to the label so the form is stable across reloads.
-  - A question is marked required only when `Mandatory` or `Required` is a real boolean `true`.
-  - The label is `Name [Datatype]`. The datatype stays visible even though it also drives the input widget, because Servicely's datatypes are finer than n8n's field types — a reference and a free-text answer are both edited as strings, so dropping it would hide the difference between questions that look identical.
-  - `Datatype` maps to the widget: `boolean`/`checkbox` → boolean, `date`/`datetime` → dateTime, `time` → time, `url` → url, `int`/`integer`/`number`/`decimal`/`float` → number, and **anything else → a plain text box**. A wrong widget would block an answer the instance would have accepted; a text box never does.
-  - The mapper depends on `catalogItemId.value`, so picking another item reloads the form instead of leaving the previous item's questions on screen. With no item selected it shows *Select a catalog item to load its questions* without calling the API; an item that genuinely asks nothing shows *This catalog item asks no questions*; and a read that fails empties the form with *Could not load the questions for this catalog item* rather than failing the node editor.
-- **An answer left blank is dropped** rather than sent as an empty string, so an optional question that was skipped stays unanswered. Nothing answered at all still posts `answers: {}`.
+This operation calls a `ServiceCatalog` controller on the instance, which comes with the Servicely package by default — the reference script is below, for adapting it or checking what it does.
 
-A stale item id, a missing mandatory answer, or an answer the instance rejects comes back as the controller's own error. There is one write, so there is never a partly built request to clean up.
+#### The `ServiceCatalog` controller
 
-The response is emitted like any other controller answer (see [Controller](#controller)). With the reference controller below that is one item per request:
-
-```json
-{ "Success": true, "TargetTable": "Incident", "TargetRecordID": "a1b2c3..." }
-```
-
-so `{{ $json.TargetRecordID }}` chains into the next node.
-
-#### Instance setup: the `ServiceCatalog` controller
-
-**This operation needs a controller named `ServiceCatalog` on the instance** — Servicely does not ship one. Create it in the **Controller** workspace with the name `ServiceCatalog` (the name is the URL segment, so it must match exactly) and give it a script that accepts `catalogItem` and `answers`. The reference implementation:
+The controller is named `ServiceCatalog` (the name is the URL segment, so it has to match exactly) and takes `catalogItem` and `answers` — the two things the node sends:
 
 ```javascript
 const requestedForField = "RequestedFor"
@@ -235,77 +166,52 @@ answer = {
 }
 ```
 
-What it does, and what the node relies on:
+It creates the request record, writes one answer row per entry of `answers` pointing at the question it answers, attributes the request to the calling user, and answers `{ Success, TargetTable, TargetRecordID }`. On a bad catalog item id it answers `{ isError: true, error: … }`, so branch on `isError` or on `Success` rather than expecting the node to throw.
 
-- `catalogItem` and `answers` arrive as the controller's own variables — the two keys the node posts, nothing else.
-- The request record is created first, then one `Answer` row per entry of `answers`, related to it as `{recordId}:{tableName}` and pointing at the question by its record id. **That id is the mapper field's id**, which is why the Questions form is keyed by `Question` row ids rather than by names.
-- The record's name field (`catalogItemRecord.NameField()`) is set to the catalog item's name, and `RequestedFor` to the calling user, so the request is attributed to whoever the credential authenticates as.
-- `QuestionsSource` is written last, under `NoTableChecksNoSystemFieldsNoChecksNoEvents`, so setting it does not re-fire the table's events. **The target table must have a `QuestionsSource` field** — the script refuses the call with `Target table don't has questionsSource Field` if it does not.
-- It answers `{ Success, TargetTable, TargetRecordID }`, which the node emits as-is. On a bad item id it answers `{ isError: true, error: ... }` with HTTP 200, so branch on `isError` (or on `Success`) rather than relying on the node to throw.
-
-Three things to know before copying it as-is:
-
-- **The target table is hardcoded to `Incident`.** `catalogItemRecord.Table()` is read into `targetTable` and used for the `Answer` rows' `RelatedRecord`, but the record itself is created with `Table("Incident")`. If your catalog items point at more than one table, change that line to `Table(targetTable)` — otherwise every request lands in `Incident` while its answers claim to belong to the item's own table.
-- The `RequestedFor` block appears twice and the second run is a no-op; `targetTableRecord.RequestedFor()` (no argument) and the unused `requestedField` are inert. Harmless, and safe to delete.
-- Nothing here validates that a mandatory question was answered. The Questions form marks required questions in n8n, but a workflow that fills the mapper from an expression can still post an incomplete `answers` — add the check to the script if that matters.
+If your catalog items point at more than one table, note that this version creates the record in `Incident` — change `Table("Incident")` to `Table(targetTable)`.
 
 ### Controller
 
-Invoke any controller registered on the instance directly — the escape hatch for instance-specific controllers the typed resources above do not cover.
+- **Invoke** — call any controller registered on the instance, for anything the resources above do not cover.
 
-| Operation | Method | Notes |
-|-----------|--------|-------|
-| **Invoke** | `POST {instanceUrl}/controller/{ControllerName}` | Posts a raw JSON body. Controller endpoints sit at the instance root, not under `/v1`. |
-
-This operation was called **Call** and stored as `operation: "call"`, which is still accepted and runs exactly the same request — a workflow that names the old value does not have to be edited. n8n saves only the parameters that differ from their default, so a workflow built in the UI never held the value at all; one created through the API or imported as JSON does.
-
-- **Controller** — **From List** shows `SystemController` records, storing each record's `Name` (the URL segment) and labelling it with `Label` / `Title` / `Description` when present; or enter a controller name / expression manually.
-- **Body (JSON)** — the request body, passed through untouched. It must be a JSON object; an expression may supply an object directly.
-
-The response is emitted as-is: an array fans out to one item per entry, an object becomes one item, a scalar is wrapped as `{ data: ... }`, and an empty response yields `{ success: true }`.
-
-> **Note on upload:** attachment upload is implemented as a direct `POST /v1/Attachment` with a base64 `Data` field. This path is not explicitly documented for inbound REST — validate it against your instance. If your instance rejects it, front the upload with a small custom controller accepting `{ mimeType, fileName, base64String, parentRecord, relatedField }`. Field names and the ParentRecord format are confirmed by the docs.
+**Controller** offers the instance's controllers by name; **Body (JSON)** is passed through untouched. The answer is emitted as it comes: a list fans out to one item per entry, an object becomes one item.
 
 ## Trigger
 
-The **Servicely Trigger** is a polling node — n8n adds a **Poll Times** schedule and calls it on that interval. Each poll that finds work starts one execution, emitting one item per message/record.
+The **Servicely Trigger** polls on the schedule set in **Poll Times**. Each poll that finds work starts one execution, emitting one item per message or record.
 
-**Trigger On → Async Queue Message** — claims messages from a Servicely Async Integration queue (`POST {instanceUrl}/controller/AsyncIntegration`, `action: "dequeue"`), the same mechanism as the Node-RED Queue node.
+**Trigger On → Async Queue Message** — claims messages from a Servicely async queue.
 
-- **Queue** — the queue to claim from. **From List** shows `ActionProviderInstance` records with `ConnectionType = async_integration`, using each record's `ConnectionString` as the value; or enter a ConnectionString / expression manually.
-- **Action Name** — the subject identifying which messages to claim. **From List** shows `Action` records for the selected queue's provider instance (`ProviderInstance` = the chosen instance's id), using each Action's `Command` as the value; or enter a command / expression manually.
-- **Messages Per Poll** — max messages claimed per poll (default 10).
-- Each emitted item is the message payload (a JSON object payload becomes the item's `json` directly; anything else is wrapped under `payload`). Reply metadata is attached under `_servicely` (`replyTo`, `queue`, `subject`).
+- **Queue** — the queue to claim from.
+- **Action Name** — the subject identifying which messages to claim.
+- **Messages Per Poll** — how many to claim at once (default 10).
+- Each item is the message payload, with `_servicely.replyTo` identifying it.
 
-> Dequeue is **at-least-once**: a claimed message may be redelivered until it is acknowledged. Close the loop with the **Queue → Reply Success / Reply Failure** operation (see [Queue](#queue)), which uses the carried `_servicely.replyTo` id.
+> Delivery is **at-least-once**: a claimed message may come again until it is acknowledged. Close the loop with **Queue → Reply Success / Reply Failure**.
 
-**Trigger On → Object (Table Records)** — polls a table and emits records matching a filter, reusing the same **Filters** / **Query (JSON)** / selector / sort surface as **Object → Get Many**.
-
-- **Table**, **Limit**, **Filters**, and **Options** (Fields / Display Value Fields / Relation Fields / Query (JSON) / Sort).
-- Each poll returns the current matches (up to **Limit**); it does not track a cursor, so pair a narrowing filter with an action that advances state (e.g. set a "processed" flag) to avoid re-emitting the same records.
+**Trigger On → Object (Table Records)** — polls a table and emits the records matching a filter, with the same **Table**, **Limit**, **Filters** and **Options** as **Object → Get Many**. Each poll returns the current matches; it keeps no cursor, so pair a narrowing filter with something that advances state (a "processed" flag, say) to avoid re-emitting the same records.
 
 ### Request Options (both nodes)
 
 - **Timeout (ms)** — per-request timeout (default 30000).
-- **Max Retries** — retries on rate limits (429), server errors (5xx), and network failures, with exponential backoff + jitter (default 3; `0` disables). `Retry-After` is honored. Client errors (400/401/404/422) are never retried.
+- **Max Retries** — retries on rate limits, server errors and network failures, with backoff (default 3; `0` disables).
 
 ## SoFi AI Webhook
-The **Servicely SoFi AI Webhook Trigger** turns a workflow into a tool the Servicely service desk agent can call. It declares the tool, serves it on an HTTP `POST` endpoint, and validates the call before the workflow runs. The answer goes back through the **Servicely** node, under the **SoFi AI Webhook** resource.
+
+The **Servicely SoFi AI Webhook Trigger** turns a workflow into a tool the Servicely service desk agent can call: it declares the tool, serves it on an endpoint, and validates the call before the workflow runs. The answer goes back through the **Servicely** node, under the **SoFi AI Webhook** resource.
 
 | | what it does |
 | --- | --- |
 | **Servicely SoFi AI Webhook Trigger** | declares and serves the tool |
 | **Servicely** → *SoFi AI Webhook* → *Send Response* | answers the call |
 
-The two jobs cannot live on one node: n8n opens a webhook for every instance of a node type that declares one, so a single node would open a dead endpoint for every response node in the workflow. They are the trigger and the action node — and not two nodes of their own — because [n8n verification](https://docs.n8n.io/integrations/creating-nodes/build/reference/verification-guidelines/) allows a package one regular node, with a trigger for the same service alongside it. The responder was its own `servicelyAiAgentTool` node until 1.2.0; see [Compatibility](#compatibility).
-
 ### Servicely SoFi AI Webhook (trigger)
 
-The tool is exported under the **node's** name (as `[n8n] <node name>`), so the node asks for no name of its own — rename the node on the canvas and the next activation renames the tool. One node is one tool, so a workflow can declare several by holding several SoFi AI Webhook nodes; name them after what they do, since two nodes both left at the default "Servicely SoFi AI Webhook" register two tools the agent cannot tell apart.
+The tool is named after the **node**, as `[n8n] <node name>`, so rename the node on the canvas and the next activation renames the tool. One node is one tool; name them after what they do, since two nodes left at the default name register two tools the agent cannot tell apart.
 
-> **Ensure the Servicely SoFi AI Webhook package is installed in the target system.** It holds the handler scripts a tool runs, in a `C_n8n_Webhook_Handler` table Servicely does not ship — without it the **Handler** list is empty and no tool can be activated. The credential modal says the same; learn more at [synergy.eu](https://www.synergy.eu).
+> **Ensure the Servicely SoFi AI Webhook package is installed in the target system.** It holds the handler scripts a tool runs — without it the **Handler** list is empty and no tool can be activated. Learn more at [synergy.eu](https://www.synergy.eu).
 
-- **Description** — what the tool does and when to call it. Exported with the tool, so the agent reads it when deciding.
+- **Description** — what the tool does and when to call it. The agent reads it when deciding.
 - **Handler Name or ID** — the handler whose script the service desk runs for this tool, required.
 
   **Configure the webhook handler.** Before activating the workflow, configure a handler in Servicely:
@@ -321,60 +227,49 @@ The tool is exported under the **node's** name (as `[n8n] <node name>`), so the 
   The handler can be reused by multiple n8n tools because each workflow inserts its own webhook URL when it is activated.
 
   Workflow activation fails if the selected handler no longer exists, is inactive, has an empty script, or does not contain the required placeholder.
+- **Parameters** — the tool's arguments: a **Name**, a **Type** (String, Number, Integer, Boolean), a **Required** toggle (on by default) and a **Description** the agent reads.
+  - A required argument the call leaves out is rejected. Turn the toggle off and the call runs without it, the workflow simply not seeing that argument.
+  - Only the presence check turns off: an argument that *is* sent still has to have the declared type.
+- **`IsLiveRun`** — a boolean every tool carries on top of the declared arguments. The agent sends `true` unless the user asked for a test run, so a workflow can tell a live call from a rehearsal. It is passed through as it comes and never rejected; declaring an argument of the same name replaces it.
+- **Respond** — when and how the agent is answered: *Using Servicely Node* (default), *Immediately*, or *When Last Node Finishes*.
+  - *Using Servicely Node* — the call stays open until a **Servicely** node set to **SoFi AI Webhook → Send Response** runs, however long the workflow takes.
+  - *Immediately* — answers as soon as the call is validated.
+  - *When Last Node Finishes* — answers with the last node's data, shaped by **Response Data**.
+- **Tool Timeout (Seconds)** — how long the service desk waits for an answer before giving up on the call (default 60). n8n keeps the request open for as long as the workflow runs, so this bounds the agent's wait, not the workflow's.
+- **The Respond setting and the wiring have to agree.** A call that would go unanswered is refused rather than left hanging: *Using Servicely Node* with no responder in the workflow fails, and so does a responder under either other mode, n8n having already replied by the time it runs.
+- **Options → On Validation Error** — respond `400` with the errors, or *Run Workflow Anyway* and pass them on in `json.validation`. Leave the option out and the call is rejected with the `400`.
+- **Options → Allow Unknown Parameters** (default on) and **Coerce Types** (default off, converting e.g. the string `"12"` to `12` before validating).
+- **Options → the response ones** — **Response Code**, **Response Headers**, **Response Data**, **No Response Body**, and, for a single JSON entry, **Response Content-Type** and **Response Property Name**. Each shows only under the modes it applies to; none appears under *Using Servicely Node*, where the responder carries its own.
+- **Options → AI Agent Names or IDs** / **AI Assistant Names or IDs** — who the tool is offered to. Activating the workflow gives it to exactly what you select and takes it away from what you deselect; leave an option out and that side is not touched at all.
+- **Options → Role Names or IDs** — the roles the tool is given.
+- **Options → Mutates Ticket** — turn it on for a tool that creates, updates or deletes something, or otherwise has side effects.
+- **Options → Production Restricted** — keeps the tool out of production instances.
 
-  The endpoint is not configurable: the tool answers on `/webhook/<node id>`, which is also the id it is registered under, so renaming or moving the node never moves it.
-- **Parameters** — the tool's arguments. Each row is a **Param Name**, a **Param Type** (`String`, `Number`, `Integer`, `Boolean`; defaults to String), a **Param Required** toggle (on by default) and a **Param Description** that is exported with the tool.
-  - A **required** argument the call leaves out is rejected. Turn the toggle off and the call runs without it — the workflow then sees the argument *absent* from `parameters` rather than present as `null`, so its meaning is the workflow's to decide.
-  - Only the presence check turns off. An argument that *is* sent is held to its declared type whether or not it had to be sent: optional means the agent may leave it out, not that it may get it wrong.
-  - **Param Required** is checked here only. The tool is exported with the argument either way, so the agent is not told an argument is optional — it may keep sending it; this node simply stops rejecting the calls that do not.
-  - A parameter saved before the toggle existed reads as required, which is how every declared parameter behaved until then.
-- **`IsLiveRun`** — a boolean parameter every tool carries on top of the declared ones, exported last so it never reorders them. Its description tells the agent to send `true` unless the user explicitly asked for a test run, so a workflow can tell a live call from a rehearsal without each tool defining its own flag. It is the one parameter that is *not* validated: a call that omits it, or sends something other than a boolean, still runs — the value is passed on as it came, and its absence is left for the workflow to interpret rather than assumed to mean anything. It is also not treated as unknown when **Allow Unknown Parameters** is off. Declaring a row named `IsLiveRun` replaces it — type, description and position then come from that row, and it is validated like any other parameter.
-- **Respond** — when and how the agent is answered, following n8n's own **Webhook** node: *Using Servicely Node* (default), *Immediately*, or *When Last Node Finishes*. The node never writes the response itself; it declares the mode, the status code and the data on its webhook, and n8n sends it.
-  - *Using Servicely Node* — the request stays open until a **Servicely** node set to **SoFi AI Webhook → Send Response** runs, however long the workflow takes. A branch that never reaches one never answers.
-  - *Immediately* — answers as soon as this node validated the call, with `{ "success": true, "message": "Workflow was started" }` unless **Options → Response Data** or **No Response Body** says otherwise.
-  - *When Last Node Finishes* — answers with the last executed node's data, shaped by **Response Data**: *First Entry JSON* (default), *All Entries*, or *No Response Body*.
-- **Tool Timeout (Seconds)** — how long the *service desk* waits for this tool to answer before giving up on the call, exported with the tool as `TimeoutSeconds`. Default 60, and shown under the two modes that make the agent wait; *Immediately* has already answered, so it does not ask. It is the only deadline in play: n8n keeps the request open for as long as the workflow runs, so this bounds the agent's wait, not the workflow's — a workflow that overruns it keeps going, it just answers into a call nobody is waiting for any more.
-- **The Respond setting and the wiring have to agree**, and a call that would go unanswered is refused with a `500` rather than left hanging: *Using Servicely Node* with no responder downstream fails with `No Servicely node set to "SoFi AI Webhook" found in the workflow`, and a responder under either other mode fails with "Unused …" — n8n has already replied by the time that node runs, so its answer would go nowhere. The check runs before the caller is even authenticated. Only a Servicely node whose **Resource** is *SoFi AI Webhook* counts; the ones doing the tool's actual work are ignored.
-- **Options → On Validation Error** — respond `400` with the errors, or *Run Workflow Anyway* and pass them on in `json.validation`. Leave the option out and the call is rejected with the `400`, which is what the field defaulted to while it was a field of its own.
-- **Options → Allow Unknown Parameters** (default on), **Coerce Types** (default off, converts e.g. the string `"12"` to `12` before validating), **AI Agent Names or IDs**, **AI Assistant Names or IDs**, **Role Names or IDs**, **Mutates Ticket**, and **Production Restricted**.
-- **Options → the response ones** — **Response Code** (default 200), **Response Headers**, **Response Data** (a fixed body for *Immediately*), **No Response Body**, and, for *When Last Node Finishes* returning First Entry JSON, **Response Content-Type** and **Response Property Name** (answer with one property of the item instead of the whole JSON). Each shows only under the modes it applies to, and none appears under *Using Servicely Node* — the responder carries its own status, body and headers.
-- **Options → AI Agent Names or IDs** / **AI Assistant Names or IDs** — who the tool is exported to: multi-selects loaded from the instance's `SystemAIAgent` and `SystemAIAssistant` tables, each entry labelled by its **Name** and stored by its record id. Reading them needs the **Servicely API** credential; a table that cannot be answered for leaves that list empty, which is also how an instance without one reads. Activating the workflow links the tool to exactly what each selects (see below). The two are independent — selecting agents does not touch the assistants — and an option you never add is left alone entirely: that table is not even read, since a workflow that says nothing about assistants is not asking for its tool to be taken out of them. Adding an option and then emptying it *is* a statement, and unlinks the tool from everything in that table.
-- **Options → Role Names or IDs** — the roles the tool is given: a multi-select loaded from the instance's `Role` table, each entry labelled by its **Name** and stored by its record id, written to the tool's own `Roles` array. Unlike the agents and assistants, this is a plain field of the tool record rather than a link held by the other side, so there is nothing to reconcile — the selection is written as it stands.
-- **Options → Mutates Ticket** — whether calling the tool changes something. Turn it on for tools that create, update or delete records, send messages, trigger external automations, or otherwise cause side effects.
-- **Options → Production Restricted** — whether the tool is kept out of production environments. When on, it cannot be selected, executed or modified on a production system — for keeping an AI from, say, changing the schema of a live instance.
+  The last three share one rule: **an option you never add is left alone, an option you add is written as it stands.** So adding Roles and selecting nothing empties the tool's roles, while never adding it leaves whatever the service desk holds.
 
-  These three share one rule: **an option you never add is left alone, an option you add is written as it stands.** Adding Roles and selecting nothing empties the tool's roles; adding a toggle and leaving it off writes `false`. Never adding them leaves whatever the service desk holds untouched, so a flag set there by hand survives every activation. (n8n keeps a collection option a workflow added even when its value equals the option's default, which is what makes "added and off" a different thing from "absent".)
-None of the fields take an expression. The node has no input, and its values are read on activation — when there is no execution to resolve one against.
+None of the fields take an expression: the node has no input, and its values are read when the workflow is activated.
 
-The emitted item carries `body`, `parameters` (the declared arguments the call actually sent, after coercion), `headers`, `query`, `params`, `validation`, and — with a JWT credential — the verified `jwt` payload.
+The emitted item carries `body`, `parameters` (the declared arguments the call actually sent), `headers`, `query`, `params`, `validation`, and — with a JWT credential — the verified `jwt` payload.
 
-The node takes two credentials, both required: the **Servicely API** one (it backs the AI Agents, AI Assistants and Roles lists, and the registration below) and a **Servicely SoFi AI Webhook Auth API** one deciding what a caller has to present. The JWT algorithm is taken from the credential, not from the token, so a caller cannot downgrade the signature.
+The node takes both credentials: the **Servicely API** one, which backs its lists and the registration, and a **Servicely SoFi AI Webhook Auth API** one deciding what a caller has to present.
 
 ### Registration in the service desk
 
-Activating the workflow registers it as a tool; deactivating removes it. n8n drives this through the webhook lifecycle hooks, so it happens on activate/deactivate — never on a manual execution.
+Activating the workflow registers it as a tool the agent can select; deactivating removes it. It never happens on a manual execution — though **Listen for test event** does register the tool, so it can be tried from the service desk while you are still building the workflow.
 
-- **On activate** the registration is upserted against a `SystemAITool` record whose **Key** is the n8n **node** id: a new record gets `Key` = the node id, `Name` = `[n8n] <node name>`, `Active` = `true`, `SelectionPrompt` = the node's **Description**, `TimeoutSeconds` = the node's **Tool Timeout** (how long the *service desk* waits for a call to be answered — n8n itself holds the request open for as long as the workflow runs; an unusable value, such as an emptied box, registers as the default 60), `ExecutionScript` = the node's script with its URL placeholder resolved, and a `Description` naming where it came from — the node, the workflow, and a link to that workflow (`Created by the "Create Incident" node of the n8n workflow "My Workflow" (https://n8n.example.com/workflow/abc123)`) — while an existing one is patched with the same fields minus the Key. That keeps activation idempotent: a record left behind by a deactivation that could not reach the instance is updated instead of failing on a duplicate Key.
-- **Three more fields are written only when the node mentions them:** `Roles`, `MutatesTicket` and `ProductionRestricted`, from the options of the same names. Each is a field a service desk may also set by hand, so an option the workflow never added is left as it is rather than overwritten on every activation — while an option that *is* there is sent as it stands, an empty selection and an off toggle included.
-- **The parameters follow the tool.** Each declared parameter becomes a `SystemAIToolParameter` row with `Name`, `Type`, `Description`, `Parent` = the tool's id, and `Order` counting from 10 in steps of 10. **Param Required** is deliberately not among them — it says what this node's webhook rejects, and the parameter table is not asked to carry a column it may not have. On a re-registration the rows are read back by `Parent` and reconciled by name: a new parameter is created, one whose type, description or position moved is patched, a row whose parameter the node no longer declares is deleted, and a row that already matches is left alone. Because `Order` comes from the declared order, reordering the collection in n8n reorders the tool's arguments. The API answers a query that matched nothing with a `404` rather than an empty list, so a `404` on the read back is taken as "no rows yet" — which is what every first registration sees; a `404` on the first *write* is the parameter table not being there under that name, and says so instead.
-- **The agents and assistants follow their selections.** The link lives on the holder — a `SystemAIAgent` or `SystemAIAssistant` holds a `Tools` array — so activation reads each *selected* table once (a registry whose option was never added is skipped without a request) and reconciles it against that table's selection: a record you selected that does not hold the tool is patched to include it, one that holds it but is no longer selected is patched to drop it, and a record already in the right state is not written at all. Linking and unlinking run as two tasks over two disjoint sets, per table, alongside the parameter sync. Entries are compared by id whether the instance stores them as bare ids, as references, or as a serialised list; a `404` on one record's write is that record having gone and is logged rather than failing the activation, and a table that is not there at all reads as "nothing to link".
-- **On deactivate** the tool comes out of every agent's and assistant's `Tools` first, so none is left pointing at a record that is about to go — a failure there is logged and the delete goes ahead anyway. The record is then looked up by that same Key and deleted if it is there. Nothing is cached between the hooks — the Key is the tool's whole identity, so a restart or a record edited in the service desk changes nothing about what the hooks find.
-- **"Listen for test event" registers the tool** like an activation does, so it can be exercised from the service desk while you are still building the workflow. Stopping the listen deliberately does *not* remove the registration: n8n tears a test webhook down exactly the way it deregisters a production one, and removing it there would deregister a workflow that is active at the same time.
-- Nothing left to remove is not treated as a failure, and removal never throws: n8n clears a workflow's webhooks on the way *into* activation as well, so a throw there would block activating the workflow too. Real failures (an expired token, a 500) are logged at error level instead.
-- The Key is the **node id**, so each Servicely SoFi AI Webhook node owns exactly one tool record and a second node in the same workflow registers a second tool of its own. The id is n8n's, and it survives everything a workflow can do to a node except deleting it — renaming it, moving it, editing its parameters — so a tool keeps its registration, and its links to agents and assistants, across all of those. Delete the node and the next activation deregisters its tool.
-- Renaming the node renames the tool (`Name` is always sent), and its links survive that too, since they hang off the record rather than its name.
-- A node with no id — a workflow assembled outside the editor — fails with "The node has no id yet".
+- The tool carries the node's name, your **Description** as its selection prompt, its declared arguments, and the handler's script with this workflow's URL in it. Re-activate after any change and the tool is brought up to date.
+- Each node owns one tool, whatever else the workflow holds, and keeps it through renaming, moving and editing. Delete the node and the next activation removes its tool.
+- Roles, **Mutates Ticket** and **Production Restricted** are written only when the node mentions them, so a value set in the service desk by hand survives activation.
 
 ### SoFi AI Webhook → Send Response
 
-A resource of the **Servicely** node, not a node of its own. It is the only resource that asks for no **Servicely API** credential and offers no **Request Options**: it answers the request a tool call is still holding open, and never talks to the instance.
+A resource of the **Servicely** node. It answers the call the trigger is still holding open, and is the only resource needing no **Servicely API** credential.
 
-- **Operation** — *Send Response*, the one operation.
-- **Respond With** — *Success* (status + data) or *Error* (status + message + optional JSON details, e.g. `{{ $json.validation.errors }}`).
+- **Respond With** — *Success* (status + data) or *Error* (status + message + optional details, e.g. `{{ $json.validation.errors }}`).
 - **Data** — all incoming items, the first incoming item, a JSON body you write, or no data.
-- **Options → Envelope** (default on) wraps the body in `{ "success": true, "data": … }` / `{ "success": false, "error": … }`; **Message** adds a note to a success; **Response Headers** adds headers.
-- `204` and `304` are sent without a body. Items pass through unchanged, so the workflow can carry on after responding. One request gets one answer however many items reach the node: the response is built from the whole batch and sent once.
-- The trigger must have **Respond** set to *Using Servicely Node*; under either other mode it refuses the call outright, rather than leaving this node with an answer nobody is waiting for. n8n holds the request open until this node runs, however long that takes — the trigger's **Tool Timeout** is what decides how long the service desk waits for it.
+- **Options → Envelope** (default on) wraps the body in `{ "success": true, "data": … }`; **Message** adds a note to a success; **Response Headers** adds headers.
+- Items pass through unchanged, so the workflow can carry on after answering. One call gets one answer however many items reach the node.
+- The trigger must have **Respond** set to *Using Servicely Node*; under either other mode it refuses the call outright rather than leaving this node with an answer nobody is waiting for.
 
 ## Examples
 
@@ -399,34 +294,24 @@ A resource of the **Servicely** node, not a node of its own. It is the only reso
 
 1. **Servicely Trigger → Async Queue Message**, Queue = your queue, Action Name = the subject, Poll Times every minute.
 2. Downstream nodes handle each message (`json` is the payload; `json._servicely.replyTo` identifies it).
-3. **Servicely → Queue → Reply Success** to acknowledge (or **Reply Failure** on an error branch). Reply To defaults to `={{ $json._servicely.replyTo }}`.
+3. **Servicely → Queue → Reply Success** to acknowledge, or **Reply Failure** on an error branch.
 
 **Expose a workflow as an agent tool**
 
 1. **Servicely SoFi AI Webhook Trigger**, renamed on the canvas to *Create Incident* (the tool registers as `[n8n] Create Incident`), Description "Creates an incident for a user and returns its number", Handler = your webhook handler, AI Agent Names or IDs = the service desk agent.
-2. *Parameters:* `shortDescription` (String, required, "What is wrong"), `priority` (Integer, **Param Required** off, "1 highest to 4 lowest — omit for the default").
+2. *Parameters:* `shortDescription` (String, required, "What is wrong"), `priority` (Integer, **Required** off, "1 highest to 4 lowest — omit for the default").
 3. *Options:* **Mutates Ticket** on, since the call creates a record.
 4. **Servicely → Object → Create**, Table `Incident`, fields taken from `={{ $json.parameters.shortDescription }}` and `={{ $json.parameters.priority }}` — the second is absent when the agent omits it, so give it a default downstream.
 5. **Servicely → SoFi AI Webhook → Send Response**, Respond With *Success*, Data *First Incoming Item*.
 
 ## Compatibility
 
-- **On Validation Error moved into Options in 1.7.0.** A workflow that had set it to *Run Workflow Anyway* loses that: the value was stored as a field of the node and is read from the Options collection now, so such a workflow rejects an invalid call with a `400` again until the option is added and set back. A workflow left on the default is unaffected.
-- **The responder's resource is called *SoFi AI Webhook* as of 1.8.0.** The trigger was renamed in 1.5.0 and the resource answering it was not, so the two read as different features in the editor. A label change only: the resource value is still `aiAgentTool`, so a saved workflow keeps the resource it selected and only shows the new name — and the errors naming it now say `No Servicely node set to "SoFi AI Webhook" found in the workflow`. The resource also sorts last in the **Resource** dropdown now, its label having moved.
-- **The trigger is called *Servicely SoFi AI Webhook Trigger* as of 1.5.0.** A display-name change only: the node type is still `servicelyAiAgentToolTrigger`, the responder was still **Servicely -> AI Agent Tool -> Send Response** at that point, and the endpoint credential is still `servicelyAiToolAuthApi` — only its label reads **Servicely SoFi AI Webhook Auth API** now. A saved workflow keeps working untouched; it shows the new name the moment the package is updated, and a node left at the old default canvas name keeps that name (and so keeps registering its tool as `[n8n] Servicely AI Agent Tool`) until it is renamed by hand.
-- **The trigger's script and path moved out of the node in 1.4.0.** The **Options -> Execution Script** box and the **Path** field are **removed**, and a required **Handler** selector takes their place: the script now lives on the instance, in a `C_n8n_Webhook_Handler` record, and the node only says which one to run. Two things change for a workflow that is already active:
-  - **Its endpoint moves.** The tool used to answer on the Path you typed; it now answers on `/webhook/<node id>`. Re-activating registers the new URL into the handler's script, so nothing has to be edited — but anything else calling the old path directly has to be pointed at the new one.
-  - **A script written in the node is dropped.** Create a `C_n8n_Webhook_Handler` record holding it (`C_Name` for the label, `C_ExecutionScript` for the script, `@@WEBHOOK_URL@@` where the endpoint goes), select it as the **Handler**, and re-activate. Until a handler is selected the activation fails with `No Servicely webhook handler is selected` rather than registering a tool that does nothing when the agent calls it. The default script the node used to generate is gone with the box, so a workflow that never wrote one needs a handler record too.
-
-  Everything else about the trigger is unchanged: same node type, same `Key`, same parameters, same registered tool -- so the tool keeps its registration and its links to agents and assistants.
-- **The AI Agent Tool responder became a resource of the Servicely node in 1.2.0.** [n8n verification](https://docs.n8n.io/integrations/creating-nodes/build/reference/verification-guidelines/) allows a package one regular node plus a trigger for the same service, and this package had two regular nodes. The `servicelyAiAgentTool` node is **removed**; what it did is now **Servicely → AI Agent Tool → Send Response**, with the same fields under the same names. The trigger is untouched — same `servicelyAiAgentToolTrigger` type, same parameters, same registered tool — so **an active workflow keeps its tool registration and its endpoint**; only the node that answers has to be replaced. To migrate a workflow: open it, delete the *Servicely AI Agent Tool Response* node, add a **Servicely** node in its place with Resource *AI Agent Tool* and Operation *Send Response*, copy the Respond With / Data / Options values across, and reconnect it. The trigger's **Respond** option that was called *Using Servicely AI Agent Tool Response Node* is now *Using Servicely Node*; its stored value is unchanged, so a saved workflow keeps the mode it had and needs no edit there. Until the responder is replaced the trigger refuses calls with `No Servicely node set to "AI Agent Tool" found in the workflow` rather than leaving the agent waiting.
-- **AI Agent Tool node types changed in 0.7.0** so the pair could become one entry in the nodes panel: the trigger became `servicelyAiAgentToolTrigger` and the node that answered became `servicelyAiAgentTool` (which 1.2.0 then replaced with the resource above). The types published before that — `servicelyAiTool` (trigger) and `servicelyAiToolResponse` — were kept registered and hidden through the 0.7.x line and are **removed as of 0.8.0**. A workflow still on them loads with unrecognised nodes: its endpoint stops answering and its tool stays registered in the service desk until the workflow is opened, the two nodes replaced with the current pair, and the workflow re-activated (the tool re-registers under the new node's id, leaving the old record to be deleted by hand). Replace both halves together — a current trigger no longer recognises an old response node.
-- **Service Catalog → Create Request needs a `ServiceCatalog` controller on the instance.** Servicely does not ship one; the operation posts to `POST {instanceUrl}/controller/ServiceCatalog` and the controller owns everything about where the request record goes and how each answer is stored. See [Instance setup: the `ServiceCatalog` controller](#instance-setup-the-servicecatalog-controller) for a reference script. Without it the node fails with the instance's own "no such controller" error.
-- Requires an n8n version supporting community nodes (`n8nNodesApiVersion: 1`).
-- Servicely REST API **v1**. Record creation returns **HTTP 200** (not 201).
-- Minimum Servicely versions for optional features:
-  - **Batch API** (`POST /v1/_batch`): `1.4.2-release.40`+.
-  - **Bearer token as URL parameter** and **`moveAttachments`**: `1.10`+.
+- **On Validation Error moved into Options in 1.7.0.** A workflow that had set it to *Run Workflow Anyway* loses that choice and rejects invalid calls again until the option is added and set back.
+- **The responder's resource is called *SoFi AI Webhook* as of 1.8.0**, and the trigger **Servicely SoFi AI Webhook Trigger** as of 1.5.0. Both are name changes: a saved workflow keeps working and only shows the new names. A node left at the old default name keeps that name until you rename it.
+- **The trigger's script and path moved out of the node in 1.4.0.** The **Execution Script** and **Path** fields are gone; choose a **Handler** instead, and the script it points at is kept in Servicely. A workflow that is already active needs two things: re-activate it, because the address the tool answers on has changed, and point anything that called the old address at the new one. If you had written a script in the node, move it to a handler in Servicely and select it — the workflow cannot be activated without one.
+- **The responder became a resource of the Servicely node in 1.2.0.** The separate response node is removed; what it did is now **Servicely → SoFi AI Webhook → Send Response**, with the same fields. An active workflow keeps its tool and its endpoint — only the node that answers has to be replaced: delete the old one, add a **Servicely** node in its place, copy the values across, and reconnect it. Until then the trigger refuses calls rather than leaving the agent waiting.
+- **Workflows built before 0.8.0** hold node types that are no longer registered and load with unrecognised nodes. Open the workflow, replace both halves with the current pair, and re-activate it; the old tool record is then left to be deleted in the service desk.
+- Requires an n8n version supporting community nodes, and the Servicely REST API **v1**.
 
 ## Resources
 
