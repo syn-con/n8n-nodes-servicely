@@ -7,6 +7,16 @@ All notable changes to this project are documented here.
 > release, so the durable home for migration notes is the **Compatibility**
 > section of `README.md`.
 
+## 1.8.2
+
+### Changed
+
+- **The Send Response operation no longer presents itself as the AI agent tool.**
+  Its action reads *"Send a webhook response"* and its description *"Answer the
+  agent whose call the SoFi AI Webhook Trigger let in"* — the old wording named a
+  tool that no longer goes by that name. The action itself carries no brand,
+  n8n's lint sentence-casing an action string and mangling "SoFi" in the process.
+
 ## 1.8.1
 
 ### Changed

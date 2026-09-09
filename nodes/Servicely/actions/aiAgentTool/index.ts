@@ -24,8 +24,10 @@ export const description: INodeProperties[] = [
       {
         name: 'Send Response',
         value: 'sendResponse',
-        action: 'Send a response to the AI agent',
-        description: 'Answer the agent that called the tool',
+        // Names no brand: n8n's own lint sentence-cases an action, which mangles
+        // "SoFi" — the resource beside it already says which webhook this is
+        action: 'Send a webhook response',
+        description: 'Answer the agent whose call the SoFi AI Webhook Trigger let in',
       },
     ],
     default: 'sendResponse',
