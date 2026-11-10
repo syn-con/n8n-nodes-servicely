@@ -1,0 +1,100 @@
+# Creates a GitHub Release for every version tag, with the package tarball
+# attached — the same .tgz `npm publish` uploads, built from the same tag.
+#
+# It runs beside publish.yml rather than inside it: a release that fails to
+# create leaves the npm publish alone, and either can be rerun on its own.
+#
+# The tarball is what to install where npm is out of reach — an n8n instance
+# without registry access takes it with `npm install ./<file>.tgz` in its
+# custom nodes folder (~/.n8n/custom by default).
+#
+# ─── RELEASE NOTES ─────────────────────────────────────────────────────────────
+#
+# The notes are the version's section of CHANGELOG.md, from its "## <version>"
+# heading to the next one. A tag with no section gets GitHub's generated notes
+# (the commits since the previous tag) instead.
+#
+# ─── MANUAL RUN ────────────────────────────────────────────────────────────────
+#
+# Actions → Release → "Run workflow" with the tag to release — for a tag pushed
+# before this workflow existed, or to rebuild one. A release that already exists
+# keeps its notes and has its tarball replaced.
+
+name: Release
+
+on:
+  push:
+    tags:
+      # The same tags publish.yml publishes: 0.1.0, 1.2.3, 2.0.0-rc.1, etc.
+      - '*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. 1.8.4)'
+        required: true
+        type: string
+
+jobs:
+  release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+
+    permissions:
+      # Creates the release and uploads the tarball to it
+      contents: write
+
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        # `npm pack` runs no build of its own: prepublishOnly fires on publish only
+        run: npm run build
+
+      - name: Pack
+        id: pack
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "$version" != "$TAG" ]; then
+            echo "::error::Tag $TAG does not match package.json version $version"
+            exit 1
+          fi
+          echo "file=$(npm pack --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Release notes
+        run: |
+          awk -v heading="## $TAG" '
+            $0 == heading { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          # Blank lines alone mean the changelog has no section for this tag
+          if ! grep -q '[^[:space:]]' notes.md; then rm notes.md; fi
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FILE: ${{ steps.pack.outputs.file }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "$FILE" --clobber
+            exit 0
+          fi
+          args=(--title "$TAG" --verify-tag)
+          if [ -f notes.md ]; then args+=(--notes-file notes.md); else args+=(--generate-notes); fi
+          # A hyphenated version (2.0.0-rc.1) is a prerelease, as it is on npm
+          case "$TAG" in *-*) args+=(--prerelease) ;; esac
+          gh release create "$TAG" "$FILE" "${args[@]}"
